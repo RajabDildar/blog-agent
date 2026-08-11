@@ -79,9 +79,14 @@ def generate_and_place_images(state: State) -> dict:
     image_specs = state.get("image_specs", []) or []
 
     if not image_specs:
+        generated_blogs_dir = Path("generated_blogs")
+        generated_blogs_dir.mkdir(exist_ok=True)
+
         filename = f"{plan.blog_title}.md"
 
-        Path(filename).write_text(
+        output_path = generated_blogs_dir / filename
+
+        output_path.write_text(
             md,
             encoding="utf-8",
         )
@@ -120,16 +125,21 @@ def generate_and_place_images(state: State) -> dict:
 
                 continue
 
-        img_md = f"![{spec['alt']}](images/{filename})\n*{spec['caption']}*"
+        img_md = f"![{spec['alt']}](../images/{filename})\n*{spec['caption']}*"
 
         md = md.replace(
             placeholder,
             img_md,
         )
 
+    generated_blogs_dir = Path("generated_blogs")
+    generated_blogs_dir.mkdir(exist_ok=True)
+
     filename = f"{plan.blog_title}.md"
 
-    Path(filename).write_text(
+    output_path = generated_blogs_dir / filename
+
+    output_path.write_text(
         md,
         encoding="utf-8",
     )
