@@ -1,29 +1,33 @@
-import operator
+from typing import TypedDict
 
-from typing import Annotated, TypedDict
-
-from schemas.models import EvidenceItem, Plan
+from schemas.models import (
+    EditorialReview,
+    Plan,
+    ResearchEvidence,
+    SectionOutput,
+)
 
 
 class State(TypedDict):
     topic: str
 
-    # routing / research
     mode: str
     needs_research: bool
     queries: list[str]
-    evidence: list[EvidenceItem]
+    research_focus: list[str]
+
+    evidence: list[ResearchEvidence]
+    research_brief: str
+
     plan: Plan | None
 
-    # workers
-    sections: Annotated[
-        list[tuple[int, str]],
-        operator.add,
-    ]
+    sections: dict[int, SectionOutput]
 
-    # reducer/image
     merged_md: str
-    md_with_placeholders: str
+
+    editorial_review: EditorialReview | None
+    revision_count: int
+
     image_specs: list[dict]
 
     final: str

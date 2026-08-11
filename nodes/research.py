@@ -1,57 +1,71 @@
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from schemas.models import EvidencePack
+from schemas.models import ResearchPack
 from schemas.state import State
-from services.llm import llm
+from services.llm import research_llm
 from services.tavily import tavily_search
-
-
-RESEARCH_SYSTEM = """You are a research synthesizer for technical writing.
-
-Given raw web search results, produce a deduplicated list of EvidenceItem objects.
-
-Rules:
-- Only include items with a non-empty url.
-- Prefer relevant + authoritative sources (company blogs, docs, reputable outlets).
-- If a published date is explicitly present in the result payload, keep it as YYYY-MM-DD.
-  If missing or unclear, set published_at=null. Do NOT guess.
-- Keep snippets short.
-- Deduplicate by URL.
-"""
+from prompts.research import RESEARCH_SYSTEM
 
 
 def research_node(state: State) -> dict:
-    queries = state.get("queries", []) or []
-    max_results = 3
+    queries = state.get("queries", [])
 
     raw_results: list[dict] = []
 
-    for q in queries:
+    for query in queries[:6]:
         raw_results.extend(
             tavily_search(
-                q,
-                max_results=max_results,
+                query,
+                max_results=4,
             )
         )
 
     if not raw_results:
-        return {"evidence": []}
+        return {
+            "evidence": [],
+            "research_brief": "",
+        }
 
-    extractor = llm.with_structured_output(EvidencePack)
+    # Deduplicate before sending to the LLM.
+    unique: dict[str, dict] = {}
+
+    for result in raw_results:
+        url = result.get("url")
+
+        if url and url not in unique:
+            unique[url] = result
+
+    compact_results = []
+
+    for result in unique.values():
+        compact_results.append(
+            {
+                "title": result.get("title", ""),
+                "url": result.get("url", ""),
+                "score": result.get("score", 0),
+                "content": result.get("content", ""),
+                "raw_content": (result.get("raw_content", "")[:5000]),
+            }
+        )
+
+    extractor = research_llm.with_structured_output(ResearchPack)
 
     pack = extractor.invoke(
         [
             SystemMessage(content=RESEARCH_SYSTEM),
-            HumanMessage(content=f"Raw results:\n{raw_results}"),
+            HumanMessage(
+                content=(
+                    f"Topic: {state['topic']}\n\n"
+                    f"Research focus:\n"
+                    f"{state.get('research_focus', [])}\n\n"
+                    f"Search results:\n"
+                    f"{compact_results}"
+                )
+            ),
         ]
     )
 
-    dedup = {}
-
-    for e in pack.evidence:
-        if e.url:
-            dedup[e.url] = e
-
     return {
-        "evidence": list(dedup.values()),
+        "evidence": pack.evidence,
+        "research_brief": pack.research_brief,
     }

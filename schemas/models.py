@@ -9,29 +9,51 @@ class Task(BaseModel):
 
     goal: str = Field(
         ...,
-        description="One sentence describing what the reader should be able to do/understand after this section.",
+        description="What the reader should understand or accomplish.",
     )
 
     bullets: list[str] = Field(
         ...,
         min_length=3,
         max_length=6,
-        description="3–6 concrete, non-overlapping subpoints to cover in this section.",
     )
 
     target_words: int = Field(
         ...,
-        description="Target word count for this section (120–550).",
+        ge=100,
+        le=700,
     )
 
+    section_role: Literal[
+        "introduction",
+        "concept",
+        "comparison",
+        "implementation",
+        "example",
+        "architecture",
+        "limitations",
+        "security",
+        "performance",
+        "conclusion",
+        "other",
+    ] = "other"
+
     tags: list[str] = Field(default_factory=list)
+
     requires_research: bool = False
     requires_citations: bool = False
     requires_code: bool = False
 
+    must_avoid: list[str] = Field(default_factory=list)
+
 
 class Plan(BaseModel):
     blog_title: str
+
+    thesis: str
+    opening_angle: str
+    reader_promise: str
+
     audience: str
     tone: str
 
@@ -44,45 +66,118 @@ class Plan(BaseModel):
     ] = "explainer"
 
     constraints: list[str] = Field(default_factory=list)
+
+    key_takeaways: list[str] = Field(
+        default_factory=list,
+        max_length=5,
+    )
+
     tasks: list[Task]
 
 
-class EvidenceItem(BaseModel):
-    title: str
+class ResearchEvidence(BaseModel):
+    claim: str
+    source_title: str
     url: str
-    snippet: str | None = None
+
+    supporting_text: str = ""
+    relevance: str = ""
+
+    published_at: str | None = None
+
+
+class ResearchPack(BaseModel):
+    evidence: list[ResearchEvidence] = Field(default_factory=list)
+
+    research_brief: str = ""
 
 
 class RouterDecision(BaseModel):
     needs_research: bool
-    mode: Literal["closed_book", "hybrid", "open_book"]
-    queries: list[str] = Field(default_factory=list)
+
+    mode: Literal[
+        "closed_book",
+        "hybrid",
+        "open_book",
+    ]
+
+    research_focus: list[str] = Field(default_factory=list)
+
+    queries: list[str] = Field(
+        default_factory=list,
+        max_length=8,
+    )
 
 
-class EvidencePack(BaseModel):
-    evidence: list[EvidenceItem] = Field(default_factory=list)
+class SectionOutput(BaseModel):
+    task_id: int
+    markdown: str
+    summary: str
+    concepts_introduced: list[str] = Field(default_factory=list)
 
 
-class ImageSpec(BaseModel):
-    placeholder: str = Field(..., description="e.g. [[IMAGE_1]]")
-    filename: str = Field(..., description="Save under images/, e.g. qkv_flow.png")
-    alt: str
-    caption: str
-    prompt: str = Field(..., description="Prompt to send to the image model.")
+class EditorialIssue(BaseModel):
+    task_id: int | None = None
 
-    size: Literal[
-        "1024x1024",
-        "1024x1536",
-        "1536x1024",
-    ] = "1024x1024"
+    category: Literal[
+        "factual",
+        "unsupported_claim",
+        "repetition",
+        "coherence",
+        "style",
+        "code",
+        "citation",
+        "structure",
+    ]
 
-    quality: Literal[
+    severity: Literal[
         "low",
         "medium",
         "high",
-    ] = "medium"
+    ]
+
+    problem: str
+    correction: str
+
+
+class EditorialReview(BaseModel):
+    approved: bool
+
+    overall_score: int = Field(
+        ge=1,
+        le=10,
+    )
+
+    issues: list[EditorialIssue] = Field(default_factory=list)
+
+    sections_to_revise: list[int] = Field(default_factory=list)
+
+
+class ImageSpec(BaseModel):
+    id: str
+
+    section_id: int
+
+    image_type: Literal[
+        "technical_diagram",
+        "conceptual",
+        "illustration",
+    ]
+
+    purpose: str
+
+    placement: Literal[
+        "start",
+        "middle",
+        "end",
+    ]
+
+    alt: str
+    caption: str
 
 
 class GlobalImagePlan(BaseModel):
-    md_with_placeholders: str
-    images: list[ImageSpec] = Field(default_factory=list)
+    images: list[ImageSpec] = Field(
+        default_factory=list,
+        max_length=3,
+    )

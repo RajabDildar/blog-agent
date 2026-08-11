@@ -1,20 +1,22 @@
-from langchain_tavily import TavilySearch
+import os
+
+from tavily import TavilyClient
 
 
-def tavily_search(query: str, max_results: int = 5) -> list[dict]:
-    tool = TavilySearch(max_results=max_results)
+client = TavilyClient(api_key=os.environ["TAVILY_API_KEY"])
 
-    results = tool.invoke({"query": query})["results"]
 
-    normalized: list[dict] = []
+def tavily_search(
+    query: str,
+    *,
+    max_results: int = 5,
+) -> list[dict]:
+    response = client.search(
+        query=query,
+        search_depth="advanced",
+        max_results=max_results,
+        include_raw_content=True,
+        include_answer=False,
+    )
 
-    for r in results or []:
-        normalized.append(
-            {
-                "title": r.get("title") or "",
-                "url": r.get("url") or "",
-                "snippet": r.get("content") or "",
-            }
-        )
-
-    return normalized
+    return response.get("results", [])

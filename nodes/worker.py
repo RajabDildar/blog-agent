@@ -1,84 +1,64 @@
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from schemas.models import EvidenceItem, Plan, Task
-from services.llm import llm
-
-
-WORKER_SYSTEM = """You are a senior technical writer and developer advocate.
-Write ONE section of a technical blog post in Markdown.
-
-Hard constraints:
-- Follow the provided Goal and cover ALL Bullets in order (do not skip or merge bullets).
-- Stay close to Target words (±15%).
-- Output ONLY the section content in Markdown (no blog title H1, no extra commentary).
-- Start with a '## <Section Title>' heading.
-
-Scope guard:
-- If blog_kind == "news_roundup": do NOT turn this into a tutorial/how-to guide.
-  Do NOT teach web scraping, RSS, automation, or "how to fetch news" unless bullets explicitly ask for it.
-  Focus on summarizing events and implications.
-
-Grounding policy:
-- If mode == open_book:
-  - Do NOT introduce any specific event/company/model/funding/policy claim unless it is supported by provided Evidence URLs.
-  - For each event claim, attach a source as a Markdown link: ([Source](URL)).
-  - Only use URLs provided in Evidence. If not supported, write: "Not found in provided sources."
-- If requires_citations == true:
-  - For outside-world claims, cite Evidence URLs the same way.
-- Evergreen reasoning is OK without citations unless requires_citations is true.
-
-Code:
-- If requires_code == true, include at least one minimal, correct code snippet relevant to the bullets.
-
-Style:
-- Short paragraphs, bullets where helpful, code fences for code.
-- Avoid fluff/marketing. Be precise and implementation-oriented.
-"""
+from schemas.models import (
+    Plan,
+    ResearchEvidence,
+    SectionOutput,
+    Task,
+)
+from services.llm import writer_llm
+from prompts.writer import WORKER_SYSTEM
 
 
 def worker_node(payload: dict) -> dict:
     task = Task(**payload["task"])
     plan = Plan(**payload["plan"])
 
-    evidence = [EvidenceItem(**e) for e in payload.get("evidence", [])]
+    evidence = [ResearchEvidence(**e) for e in payload.get("evidence", [])]
 
-    topic = payload["topic"]
-    mode = payload.get("mode", "closed_book")
-
-    bullets_text = "\n- " + "\n- ".join(task.bullets)
-
-    evidence_text = ""
-
-    if evidence:
-        evidence_text = "\n".join(
-            f"- {e.title} | {e.url}".strip() for e in evidence[:20]
+    evidence_text = "\n".join(
+        (
+            f"- Claim: {e.claim}\n"
+            f"  Source: {e.source_title}\n"
+            f"  URL: {e.url}\n"
+            f"  Evidence: {e.supporting_text}"
         )
+        for e in evidence[:12]
+    )
 
-    section_md = llm.invoke(
+    previous_summary = payload.get(
+        "previous_summary",
+        "",
+    )
+
+    next_goal = payload.get(
+        "next_goal",
+        "",
+    )
+
+    result = writer_llm.with_structured_output(SectionOutput).invoke(
         [
             SystemMessage(content=WORKER_SYSTEM),
             HumanMessage(
                 content=(
-                    f"Blog title: {plan.blog_title}\n"
-                    f"Audience: {plan.audience}\n"
-                    f"Tone: {plan.tone}\n"
-                    f"Blog kind: {plan.blog_kind}\n"
-                    f"Constraints: {plan.constraints}\n"
-                    f"Topic: {topic}\n"
-                    f"Mode: {mode}\n\n"
-                    f"Section title: {task.title}\n"
-                    f"Goal: {task.goal}\n"
-                    f"Target words: {task.target_words}\n"
-                    f"Tags: {task.tags}\n"
-                    f"requires_research: {task.requires_research}\n"
-                    f"requires_citations: {task.requires_citations}\n"
-                    f"requires_code: {task.requires_code}\n"
-                    f"Bullets:{bullets_text}\n\n"
-                    f"Evidence (ONLY use these URLs when citing):\n"
-                    f"{evidence_text}\n"
+                    f"Topic: {payload['topic']}\n"
+                    f"Mode: {payload['mode']}\n\n"
+                    f"Thesis:\n{plan.thesis}\n\n"
+                    f"Reader promise:\n"
+                    f"{plan.reader_promise}\n\n"
+                    f"Full outline:\n"
+                    f"{[t.model_dump() for t in plan.tasks]}\n\n"
+                    f"Previous section summary:\n"
+                    f"{previous_summary}\n\n"
+                    f"Next section goal:\n"
+                    f"{next_goal}\n\n"
+                    f"Current section:\n"
+                    f"{task.model_dump()}\n\n"
+                    f"Evidence:\n"
+                    f"{evidence_text}"
                 )
             ),
         ]
-    ).content.strip()
+    )
 
-    return {"sections": [(task.id, section_md)]}
+    return {"sections": {result.task_id: result}}
