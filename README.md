@@ -1,160 +1,424 @@
 # Blog Agent
 
-A multi-stage AI blog writing agent built with Python and LangGraph. It researches a topic when necessary, creates an article plan, generates sections in parallel, reviews the complete article, performs a targeted revision when needed, and generates contextual images that are inserted into the appropriate sections.
+A Python-based AI blog writing agent built with LangGraph, LangChain, Groq, Gemini, Tavily, and Cloudflare Workers AI.
 
-The project is designed around a simple goal: generate a small number of high-quality technical blogs while relying on free or low-cost AI services.
+The agent takes a blog topic, decides whether research is needed, gathers web evidence when necessary, creates a structured article plan, generates sections in parallel, reviews the complete article, performs a targeted revision when required, generates relevant images, inserts those images into the appropriate sections, validates the final Markdown, and saves the finished blog locally.
+
+The project is designed to generate a small number of high-quality technical blogs while keeping API usage within free-tier limits.
 
 ## Features
 
-* Research-aware blog generation
-* Automatic decision on whether web research is needed
+* Topic-based blog generation
+* Automatic research routing
+* Closed-book, hybrid, and open-book research modes
 * Web research using Tavily
-* Structured article planning
-* Parallel section generation using LangGraph
-* Separate LLM roles for routing, planning, writing, research, and editing
-* Editorial review with a quality score
-* Targeted section revision
-* AI-generated images using Cloudflare Workers AI
-* Image placement based on article sections
-* Deterministic Markdown image insertion
-* Structured outputs using Pydantic
-* Rate limiting for Groq API usage
-* Retry handling for Groq rate-limit errors
-* Markdown validation before completion
-* LangSmith tracing support
+* Structured research evidence using Pydantic
+* Article planning with thesis, opening angle, reader promise, and key takeaways
+* Parallel section generation with LangGraph `Send`
+* Groq Llama 3.3 70B for section writing and revision
+* Gemini for routing, research synthesis, planning, editing, and image planning
+* Structured LLM outputs
+* Editorial quality review
+* Targeted revision of affected sections
+* One bounded revision cycle
+* Image planning based on article sections
+* Image generation with Cloudflare Workers AI
+* Deterministic image placement in Markdown
+* Deterministic image filename generation
+* Markdown validation
+* Groq rate limiting and retry handling
+* Optional LangSmith tracing
+* Local Markdown and image output
 
 ## Architecture
 
+The agent uses a graph-based workflow with a bounded review and revision loop.
+
 ```text
-                         ┌───────────────┐
-                         │     Topic     │
-                         └───────┬───────┘
-                                 │
-                                 ▼
-                         ┌───────────────┐
-                         │    Router     │
-                         │    8B LLM     │
-                         └───────┬───────┘
-                                 │
-                    ┌────────────┴────────────┐
-                    │                         │
-               Research needed          No research
-                    │                         │
-                    ▼                         │
-             ┌───────────────┐                │
-             │    Tavily     │                │
-             │    Research   │                │
-             └───────┬───────┘                │
-                     │                        │
-                     └──────────┬─────────────┘
-                                ▼
-                         ┌───────────────┐
-                         │    Planner    │
-                         │     70B       │
-                         └───────┬───────┘
-                                 │
-                    ┌────────────┼────────────┐
-                    ▼            ▼            ▼
-                Section 1    Section 2    Section N
-                  Worker       Worker       Worker
-                    │            │            │
-                    └────────────┼────────────┘
-                                 ▼
-                         ┌───────────────┐
-                         │     Merge     │
-                         │    Python     │
-                         └───────┬───────┘
-                                 ▼
-                         ┌───────────────┐
-                         │    Editor     │
-                         │     70B       │
-                         └───────┬───────┘
-                                 │
-                    ┌────────────┴────────────┐
-                    │                         │
-                 Approved                  Revision
-                    │                         │
-                    │                         ▼
-                    │                  Targeted sections
-                    │                         │
-                    │                         ▼
-                    │                       Merge
-                    │                         │
-                    └────────────┬────────────┘
-                                 ▼
-                         ┌───────────────┐
-                         │ Image Planner │
-                         │     8B        │
-                         └───────┬───────┘
-                                 ▼
-                         ┌───────────────┐
-                         │   Cloudflare  │
-                         │   Workers AI  │
-                         └───────┬───────┘
-                                 ▼
-                         ┌───────────────┐
-                         │   Validator   │
-                         │    Python     │
-                         └───────┬───────┘
-                                 ▼
-                            Final Blog
+                         User Topic
+                             |
+                             v
+                          Router
+                         Gemini
+                             |
+             +---------------+---------------+
+             |                               |
+       No research                    Research required
+             |                               |
+             |                           Research
+             |                           Tavily
+             |                               |
+             |                               v
+             +--------------------------> Planner
+                                           Gemini
+                                             |
+                                             v
+                                  Parallel Section Workers
+                                       Groq Llama 3.3 70B
+                                             |
+                                             v
+                                            Merge
+                                           Python
+                                             |
+                                             v
+                                           Editor
+                                           Gemini
+                                             |
+                              +--------------+--------------+
+                              |                             |
+                            Pass                         Revision
+                              |                             |
+                              |                   Affected sections only
+                              |                             |
+                              |                         Groq 70B
+                              |                             |
+                              |                          Merge again
+                              |                             |
+                              +--------------+--------------+
+                                             |
+                                             v
+                                      Image Planner
+                                          Gemini
+                                             |
+                                             v
+                                      Image Generation
+                                        Cloudflare
+                                             |
+                                             v
+                                      Markdown Insertion
+                                          Python
+                                             |
+                                             v
+                                         Validator
+                                          Python
+                                             |
+                                             v
+                                        Save Blog
 ```
 
-
-## LLM Strategy
-
-The project does not use the same model for every task.
-
-The current model allocation is:
-
-| Task               | Model                     |
-| ------------------ | ------------------------- |
-| Routing            | `llama-3.1-8b-instant`    |
-| Research synthesis | `llama-3.1-8b-instant`    |
-| Article planning   | `llama-3.3-70b-versatile` |
-| Section writing    | `llama-3.3-70b-versatile` |
-| Editorial review   | `llama-3.3-70b-versatile` |
-| Revision           | `llama-3.3-70b-versatile` |
-| Image planning     | `llama-3.3-70b-versatile` |
-
-The smaller model handles relatively simple classification and research processing, while the larger model is reserved for tasks that directly affect article quality.
-
-## Image Generation
-
-Images are planned separately from article generation.
-
-The image planner determines:
-
-* Which sections need an image
-* What type of image is appropriate
-* Why the image is useful
-* Where the image should appear
-* Alt text
-* Caption
-
-Python then generates the final image prompt and filename.
-
-This avoids allowing an LLM to directly modify the article Markdown.
+The system intentionally separates LLM decisions from deterministic operations.
 
 For example:
 
+* The LLM decides which section needs an image.
+
+* Python inserts the image.
+
+* The LLM decides which sections need revision.
+
+* Python routes those sections to the revision node.
+
+* The LLM creates the article structure.
+
+* Python preserves section ordering.
+
+## Model Strategy
+
+Different models are used according to the task.
+
+| Task               | Provider      | Model                             |
+| ------------------ | ------------- | --------------------------------- |
+| Routing            | Google Gemini | Configured Gemini model           |
+| Research synthesis | Google Gemini | Configured Gemini model           |
+| Article planning   | Google Gemini | Configured Gemini model           |
+| Section writing    | Groq          | `llama-3.3-70b-versatile`         |
+| Editorial review   | Google Gemini | Configured Gemini model           |
+| Section revision   | Groq          | `llama-3.3-70b-versatile`         |
+| Image planning     | Google Gemini | Configured Gemini model           |
+| Image generation   | Cloudflare    | Configured Workers AI image model |
+
+The larger Groq model is reserved for writing-related tasks. Gemini handles the larger-context structured-processing tasks such as research synthesis and editorial review.
+
+## Research Routing
+
+Before planning, the router determines whether external research is needed.
+
+### Closed Book
+
+Used for evergreen topics where current information does not materially improve the article.
+
 ```text
-Image Planner
-    |
-    | section_id = 3
-    | placement = middle
-    |
-    v
-Python Markdown Processor
-    |
-    v
-Section 3
-    |
-    v
-Image inserted at the requested position
+Topic
+  |
+  v
+Router
+  |
+  v
+closed_book
+  |
+  v
+Planner
 ```
 
-Images are generated using Cloudflare Workers AI and stored in the `images/` directory.
+### Hybrid
+
+Used for topics that are mostly evergreen but benefit from current tools, examples, products, statistics, releases, or other recent information.
+
+```text
+Topic
+  |
+  v
+Router
+  |
+  v
+hybrid
+  |
+  v
+Tavily Research
+  |
+  v
+Research Evidence
+  |
+  v
+Planner
+```
+
+### Open Book
+
+Used for topics that depend heavily on current information such as recent events, rankings, pricing, regulations, or recent releases.
+
+```text
+Topic
+  |
+  v
+Router
+  |
+  v
+open_book
+  |
+  v
+Tavily Research
+  |
+  v
+Research Evidence
+  |
+  v
+Planner
+```
+
+The research stage converts search results into structured evidence containing claims, sources, supporting text, relevance, and optional publication dates.
+
+## Article Planning
+
+The planner produces a structured `Plan` containing:
+
+* Blog title
+* Thesis
+* Opening angle
+* Reader promise
+* Audience
+* Tone
+* Blog type
+* Constraints
+* Key takeaways
+* Section tasks
+
+Each `Task` contains:
+
+* Section ID
+* Section title
+* Goal
+* Bullets
+* Target word count
+* Section role
+* Tags
+* Research requirement
+* Citation requirement
+* Code requirement
+* Topics to avoid
+
+The planner is instructed to create only the sections needed to explain the topic well rather than forcing a fixed section count.
+
+## Parallel Section Generation
+
+LangGraph uses `Send` to generate sections independently.
+
+```text
+                       Blog Plan
+                           |
+             +-------------+-------------+
+             |             |             |
+             v             v             v
+          Worker 1      Worker 2      Worker 3
+          Groq 70B      Groq 70B      Groq 70B
+             |             |             |
+             +-------------+-------------+
+                           |
+                           v
+                         Merge
+```
+
+Each worker receives:
+
+* Article thesis
+* Reader promise
+* Full outline
+* Current task
+* Previous section context
+* Next section goal
+* Relevant research evidence
+
+This allows individual workers to write in parallel while reducing repetition between sections.
+
+## Structured Section Output
+
+Workers return structured `SectionOutput` objects rather than arbitrary text.
+
+The output contains:
+
+```text
+task_id
+markdown
+summary
+concepts_introduced
+```
+
+Generated sections are stored in a dictionary keyed by task ID.
+
+LangGraph uses a dictionary reducer so multiple parallel workers can safely update the same state key.
+
+## Editorial Review
+
+After all sections are merged, the complete article is sent to an editorial review node.
+
+The editor evaluates:
+
+* Relevance
+* Coherence
+* Technical accuracy
+* Unsupported claims
+* Repetition
+* Section structure
+* Usefulness
+* Code quality
+* Citation quality
+* Introduction
+* Conclusion
+
+The editor returns:
+
+```text
+Approval decision
+Overall score
+Issues
+Sections requiring revision
+```
+
+An article is accepted when it meets the configured quality threshold and contains no high-severity issues.
+
+## Targeted Revision
+
+The system does not regenerate the entire article when problems are found.
+
+Only affected sections are revised.
+
+```text
+Draft
+  |
+  v
+Editor
+  |
+  +---- Pass ----------> Image planning
+  |
+  +---- Problems ------> Affected sections
+                               |
+                               v
+                          Groq 70B
+                               |
+                               v
+                            Merge
+                               |
+                               v
+                            Editor
+```
+
+The revision cycle is intentionally limited to one pass to keep API usage bounded.
+
+## Image Generation
+
+Image planning happens after the article has passed through the editorial stage.
+
+The image planner determines:
+
+* Section ID
+* Image type
+* Purpose
+* Placement
+* Alt text
+* Caption
+
+Image types include:
+
+* Technical diagrams
+* Conceptual images
+* Illustrations
+
+The LLM does not directly modify the article Markdown.
+
+Instead:
+
+```text
+Image planner
+     |
+     v
+Image specification
+     |
+     +---- section_id
+     +---- placement
+     +---- purpose
+     +---- alt
+     +---- caption
+     |
+     v
+Python
+     |
+     +---- prompt generation
+     +---- filename generation
+     +---- Markdown insertion
+```
+
+This prevents images from being grouped at the end of the article.
+
+## Image Generation Provider
+
+Cloudflare Workers AI is used to generate images.
+
+The current image model is configurable through the environment.
+
+Generated images are saved in:
+
+```text
+images/
+```
+
+Failed image generation does not invalidate the article. The failure is logged and the article continues without that image.
+
+## Markdown Processing
+
+Markdown operations are handled by Python.
+
+The application performs:
+
+* Section detection
+* Image insertion
+* Safe image filename generation
+* Image path construction
+* Final Markdown validation
+* Blog storage
+
+The LLM is not responsible for manipulating the final document structure.
+
+## Validation
+
+Before saving the final article, the validator checks for issues such as:
+
+* Missing H1 title
+* Unresolved image placeholders
+* Image-generation failure text leaking into the article
+* Unsupported-claim markers leaking into the final Markdown
+* Unclosed code fences
+
+The validator is deterministic and does not require another LLM call.
 
 ## Project Structure
 
@@ -222,10 +486,11 @@ blog-agent/
 * Python 3.11+
 * `uv`
 * Groq API key
+* Google AI Studio API key
 * Tavily API key
 * Cloudflare account with Workers AI access
 
-LangSmith is optional and can be enabled for tracing and debugging.
+LangSmith is optional.
 
 ## Installation
 
@@ -236,7 +501,7 @@ git clone https://github.com/RajabDildar/blog-agent.git
 cd blog-agent
 ```
 
-Install dependencies with `uv`:
+Install dependencies:
 
 ```bash
 uv sync
@@ -248,7 +513,9 @@ Create the environment file:
 cp .env.example .env
 ```
 
-Add your API credentials to `.env`.
+Then add the required API keys and model configuration.
+
+## Environment Variables
 
 Example:
 
@@ -256,17 +523,15 @@ Example:
 GROQ_API_KEY=
 
 GROQ_WRITER_MODEL=llama-3.3-70b-versatile
-GROQ_ROUTER_MODEL=llama-3.1-8b-instant
-GROQ_RESEARCH_MODEL=llama-3.1-8b-instant
-GROQ_PLANNER_MODEL=llama-3.3-70b-versatile
-GROQ_EDITOR_MODEL=llama-3.3-70b-versatile
 GROQ_REVISION_MODEL=llama-3.3-70b-versatile
+
+GOOGLE_API_KEY=
+GEMINI_MODEL=gemini-3.1-flash-lite
 
 TAVILY_API_KEY=
 
 CLOUDFLARE_ACCOUNT_ID=
 CLOUDFLARE_API_TOKEN=
-
 CLOUDFLARE_IMAGE_MODEL=@cf/black-forest-labs/flux-1-schnell
 ```
 
@@ -278,117 +543,39 @@ LANGSMITH_API_KEY=
 LANGSMITH_PROJECT=blog-agent
 ```
 
-## Usage
+Do not commit `.env` to the repository.
 
-Start the agent with:
+## Running the Agent
+
+Start the application with:
 
 ```bash
-uv run python main.py
+uv run python3 main.py
 ```
 
-Enter a topic when prompted:
+The application prompts for a topic:
 
 ```text
 Enter blog topic: AI in finance
 ```
 
-The agent will then run the complete generation pipeline.
-
-Generated Markdown files are saved in:
+After the graph completes, the generated Markdown blog is saved to:
 
 ```text
 generated_blogs/
 ```
 
-Generated images are saved in:
+Generated images are saved to:
 
 ```text
 images/
 ```
 
-## Research
-
-The router determines whether research is necessary.
-
-There are three modes:
-
-### Closed Book
-
-Used for evergreen topics where external research does not materially improve the article.
-
-### Hybrid
-
-Used when the topic is primarily evergreen but current information, examples, products, statistics, or recent developments would improve the article.
-
-### Open Book
-
-Used when the article depends heavily on current information.
-
-When research is performed, Tavily results are collected and converted into structured evidence before being passed to the planning and writing stages.
-
-The writing nodes are instructed not to invent sources or URLs.
-
-## Article Generation
-
-The planner creates a structured article plan containing:
-
-* Article title
-* Thesis
-* Opening angle
-* Reader promise
-* Target audience
-* Tone
-* Article type
-* Key takeaways
-* Section structure
-* Section goals
-* Section requirements
-* Research requirements
-* Citation requirements
-* Code requirements
-
-Each section is then generated independently.
-
-LangGraph fans these section-generation tasks out so they can run independently and then merges them back into the correct article order.
-
-## Editorial Review
-
-After all sections are generated, the complete article is reviewed by an editor model.
-
-The editor checks:
-
-* Technical accuracy
-* Unsupported claims
-* Repetition
-* Coherence
-* Structure
-* Citations
-* Code
-* Usefulness
-* Introduction
-* Conclusion
-
-The review produces a score from 1 to 10.
-
-If the article does not meet the required quality threshold, only the affected sections are revised.
-
-The project currently limits this revision cycle to one pass to avoid unnecessary API usage.
-
-## API Usage Strategy
-
-The project is designed to work within free API limits.
-
-Instead of using the most expensive model for every operation, model usage is divided according to task complexity.
-
-The architecture also uses rate limiting and retry handling for Groq requests.
-
-The goal is not to generate large numbers of articles. The goal is to use a limited number of API calls to produce a small number of substantially better articles.
-
 ## Evaluation
 
-The `eval/` directory contains topics used to evaluate the generated articles.
+The `eval/` directory contains a small topic set for evaluating the quality of generated blogs.
 
-Articles can be manually evaluated using:
+Recommended evaluation criteria:
 
 * Overall quality
 * Structure
@@ -397,77 +584,119 @@ Articles can be manually evaluated using:
 * Coherence
 * Usefulness
 * Writing quality
-* Citations
+* Citation quality
 * Image quality
 
-Generation metrics can also be recorded, including:
+Generation metrics can also be tracked:
 
 * Generation time
-* Number of LLM calls
-* Number of research calls
-* Number of image calls
+* LLM calls
+* Research calls
+* Image calls
 * Revision count
 
-The evaluation process is intended to compare changes to prompts, models, research strategy, and graph architecture rather than relying only on subjective impressions from a single generated article.
+The evaluation topics are intended to provide a consistent baseline when changing prompts, models, graph behavior, or research strategies.
+
+## API Usage Strategy
+
+The project is designed for a limited number of high-quality generations rather than high-volume generation.
+
+API usage is distributed across providers:
+
+```text
+Gemini
+  Research
+  Planning
+  Editorial review
+  Image planning
+
+Groq
+  Section writing
+  Targeted revision
+
+Tavily
+  Web research
+
+Cloudflare Workers AI
+  Image generation
+```
+
+This avoids depending entirely on one provider and reserves the larger Groq model for the parts of the workflow that directly affect writing quality.
+
+Groq requests are rate-limited and retried when rate-limit errors occur.
 
 ## Design Principles
 
 ### LLMs make decisions, Python enforces structure
 
-The project intentionally avoids using an LLM for operations that can be handled deterministically.
+The project keeps deterministic operations outside the LLM.
 
-For example:
+Examples:
 
-* LLM decides where an image belongs.
+```text
+LLM:
+Choose image placement
 
-* Python inserts the image.
+Python:
+Insert image into Markdown
+```
 
-* LLM decides the article structure.
+```text
+LLM:
+Identify sections requiring revision
 
-* Python preserves section ordering.
+Python:
+Route those sections and replace them
+```
 
-* LLM identifies sections requiring revision.
+```text
+LLM:
+Generate article structure
 
-* Python replaces those sections.
-
-This reduces unnecessary model work and makes the output more predictable.
+Python:
+Preserve section order
+```
 
 ### Structured outputs
 
-Important LLM operations use Pydantic schemas instead of relying on free-form text.
-
-This includes:
+The application uses Pydantic models for major LLM operations including:
 
 * Routing
+* Research
 * Planning
-* Research evidence
 * Section generation
 * Editorial review
 * Image planning
 
-### Bounded agent behavior
+### Bounded execution
 
-The agent does not continuously loop until it believes the article is perfect.
+The graph intentionally avoids unrestricted loops.
 
-The current pipeline uses bounded steps:
+The normal flow is:
 
 ```text
-Research
-   ↓
+Route
+  ↓
+Research when needed
+  ↓
 Plan
-   ↓
-Generate
-   ↓
-Review
-   ↓
-One targeted revision
-   ↓
-Images
-   ↓
+  ↓
+Parallel writing
+  ↓
+Merge
+  ↓
+Editorial review
+  ↓
+One targeted revision when necessary
+  ↓
+Image planning
+  ↓
+Image generation
+  ↓
 Validation
+  ↓
+Save
 ```
-
-This keeps API usage predictable.
 
 ## License
 
