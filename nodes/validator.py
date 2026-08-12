@@ -1,41 +1,111 @@
 import re
 
 from schemas.state import State
+from services.image_validation import (
+    validate_image_references,
+)
 
 
-def validate_markdown(markdown: str) -> list[str]:
+HEADING_PATTERN = re.compile(
+    r"^(#{1,6})\s+(.+?)\s*$",
+    re.MULTILINE,
+)
+
+
+def validate_markdown(
+    markdown: str,
+    *,
+    expected_sections: list[str],
+    image_results: list[dict],
+) -> list[str]:
     errors: list[str] = []
 
-    if not markdown.startswith("# "):
-        errors.append("Missing H1 title.")
+    if not markdown.strip():
+        errors.append("Final Markdown is empty.")
 
-    if "[[IMAGE_" in markdown:
-        errors.append("Unresolved image placeholder.")
+        return errors
 
-    if "IMAGE GENERATION FAILED" in markdown:
-        errors.append("Image failure text leaked into output.")
+    headings = HEADING_PATTERN.findall(markdown)
 
-    if "Not found in provided sources." in markdown:
-        errors.append("Unsupported claim marker leaked into output.")
+    h1s = [title for level, title in headings if level == "#"]
 
-    fenced_blocks = re.findall(
+    if len(h1s) != 1:
+        errors.append(f"Expected exactly one H1, found {len(h1s)}.")
+
+    if h1s and not markdown.startswith(f"# {h1s[0]}"):
+        errors.append("Document must begin with its H1 title.")
+
+    for level, title in headings:
+        if len(level) > 2:
+            errors.append(f"Invalid heading level found: {level} {title}")
+
+    actual_h2s = [title.strip() for level, title in headings if level == "##"]
+
+    if not actual_h2s:
+        errors.append("No H2 sections found.")
+
+    expected_index = 0
+
+    for title in actual_h2s:
+        if (
+            expected_index < len(expected_sections)
+            and title == expected_sections[expected_index]
+        ):
+            expected_index += 1
+
+    if expected_index != len(expected_sections):
+        missing = expected_sections[expected_index:]
+
+        errors.append("Missing or incorrectly ordered sections: " + ", ".join(missing))
+
+    code_fences = re.findall(
         r"```",
         markdown,
     )
 
-    if len(fenced_blocks) % 2 != 0:
+    if len(code_fences) % 2 != 0:
         errors.append("Unclosed Markdown code fence.")
+
+    forbidden_markers = {
+        "[[IMAGE_": "Unresolved image placeholder.",
+        "IMAGE GENERATION FAILED": ("Image failure text leaked into output."),
+        "Not found in provided sources.": (
+            "Unsupported claim marker leaked into output."
+        ),
+    }
+
+    for marker, error in forbidden_markers.items():
+        if marker in markdown:
+            errors.append(error)
+
+    errors.extend(
+        validate_image_references(
+            markdown,
+            image_results,
+        )
+    )
 
     return errors
 
 
 def validator_node(state: State) -> dict:
-    errors = validate_markdown(state["final"])
+    plan = state["plan"]
 
-    if errors:
-        raise ValueError(
-            "Final Markdown validation failed:\n"
-            + "\n".join(f"- {error}" for error in errors)
-        )
+    if plan is None:
+        raise ValueError("Validator: plan is missing.")
 
-    return {}
+    expected_sections = [task.title for task in plan.tasks]
+
+    errors = validate_markdown(
+        state["final"],
+        expected_sections=expected_sections,
+        image_results=state.get(
+            "image_results",
+            [],
+        ),
+    )
+
+    return {
+        "validation_errors": errors,
+        "validation_passed": not errors,
+    }

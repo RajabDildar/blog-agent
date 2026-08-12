@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from services.markdown import safe_filename
+
 
 def save_blog(
     *,
@@ -7,12 +9,15 @@ def save_blog(
     markdown: str,
 ) -> Path:
     directory = Path("generated_blogs")
+
     directory.mkdir(
         parents=True,
         exist_ok=True,
     )
 
-    path = directory / f"{title}.md"
+    filename = safe_filename(title)
+
+    path = directory / filename
 
     path.write_text(
         markdown,

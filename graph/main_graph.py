@@ -14,6 +14,8 @@ from nodes.revision import revision_node
 from nodes.router import route_next, router_node
 from nodes.validator import validator_node
 from nodes.worker import worker_node
+from nodes.repair import repair_node
+from nodes.save import save_node
 from schemas.state import State
 
 
@@ -125,6 +127,28 @@ def mark_revision(
     return {"revision_count": (state["revision_count"] + 1)}
 
 
+def route_after_validation(state: State):
+    if state["validation_passed"]:
+        return "save"
+
+    if state["repair_count"] < 1:
+        return "repair"
+
+    return "fail"
+
+
+def validation_failure_node(state: State) -> dict:
+    errors = state.get(
+        "validation_errors",
+        [],
+    )
+
+    raise RuntimeError(
+        "Final Markdown validation failed after repair attempt:\n"
+        + "\n".join(f"- {error}" for error in errors)
+    )
+
+
 builder = StateGraph(State)
 
 builder.add_node(
@@ -182,6 +206,22 @@ builder.add_node(
 builder.add_node(
     "validator",
     validator_node,
+)
+
+builder.add_node(
+    "validation_failure",
+    validation_failure_node,
+)
+
+builder.add_node(
+    "repair",
+    repair_node,
+    retry=groq_retry_policy,
+)
+
+builder.add_node(
+    "save",
+    save_node,
 )
 
 
@@ -245,8 +285,28 @@ builder.add_edge(
     "validator",
 )
 
-builder.add_edge(
+builder.add_conditional_edges(
     "validator",
+    route_after_validation,
+    {
+        "save": "save",
+        "repair": "repair",
+        "fail": "validation_failure",
+    },
+)
+
+builder.add_edge(
+    "repair",
+    "validator",
+)
+
+builder.add_edge(
+    "save",
+    END,
+)
+
+builder.add_edge(
+    "validation_failure",
     END,
 )
 
@@ -270,7 +330,12 @@ def run(topic: str):
             "editorial_review": None,
             "revision_count": 0,
             "image_specs": [],
+            "image_results": [],
             "final": "",
+            "validation_errors": [],
+            "validation_passed": False,
+            "repair_count": 0,
+            "saved_path": "",
         },
         {
             "recursion_limit": 50,

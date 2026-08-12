@@ -33,5 +33,12 @@ class State(TypedDict):
     revision_count: int
 
     image_specs: list[dict]
+    image_results: list[dict]
 
     final: str
+
+    validation_errors: list[str]
+    validation_passed: bool
+    repair_count: int
+
+    saved_path: str

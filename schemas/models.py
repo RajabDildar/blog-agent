@@ -164,14 +164,35 @@ class ImageSpec(BaseModel):
 
     purpose: str
 
+    visual_description: str = Field(
+        ...,
+        min_length=20,
+        max_length=500,
+    )
+
+    key_elements: list[str] = Field(
+        default_factory=list,
+        min_length=1,
+        max_length=8,
+    )
+
     placement: Literal[
         "start",
         "middle",
         "end",
     ]
 
-    alt: str
-    caption: str
+    alt: str = Field(
+        ...,
+        min_length=3,
+        max_length=160,
+    )
+
+    caption: str = Field(
+        ...,
+        min_length=3,
+        max_length=240,
+    )
 
 
 class GlobalImagePlan(BaseModel):
@@ -179,3 +200,7 @@ class GlobalImagePlan(BaseModel):
         default_factory=list,
         max_length=3,
     )
+
+
+class MarkdownRepairOutput(BaseModel):
+    markdown: str

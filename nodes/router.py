@@ -7,14 +7,18 @@ from prompts.router import ROUTER_SYSTEM
 
 
 def router_node(state: State) -> dict:
-    decider = gemini_llm.with_structured_output(RouterDecision)
+    try:
+        decider = gemini_llm.with_structured_output(RouterDecision)
 
-    decision = decider.invoke(
-        [
-            SystemMessage(content=ROUTER_SYSTEM),
-            HumanMessage(content=f"Topic:\n{state['topic']}"),
-        ]
-    )
+        decision = decider.invoke(
+            [
+                SystemMessage(content=ROUTER_SYSTEM),
+                HumanMessage(content=f"Topic:\n{state['topic']}"),
+            ]
+        )
+
+    except Exception as exc:
+        raise RuntimeError(f"Router failed: {exc}") from exc
 
     return {
         "needs_research": decision.needs_research,

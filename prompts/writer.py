@@ -59,12 +59,20 @@ Return ONLY valid JSON matching this structure:
   "concepts_introduced": ["string"]
 }
 
-The markdown field contains the complete Markdown section,
-including its ## heading.
+- Escape newlines inside JSON strings correctly.
+- Do not return a function call.
 
-Do not place Markdown outside the markdown field.
-Do not add commentary.
-Escape newlines inside JSON strings correctly.
-Do not return a function call.
-Do not wrap the JSON in ```json fences.
+Markdown rules:
+
+- Return exactly one complete H2 section.
+- The section must start with exactly one `##` heading.
+- Never create an H1.
+- Never create H3, H4, H5, or H6 headings.
+- Do not create additional headings inside the section.
+- Close every Markdown code fence.
+- Never leave an unfinished code block.
+- Do not wrap the entire response in a Markdown code fence.
+- Use valid Markdown only.
+- Do not output JSON outside the structured output.
+- Do not add commentary outside the markdown field.
 """
