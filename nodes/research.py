@@ -12,11 +12,11 @@ def research_node(state: State) -> dict:
 
     raw_results: list[dict] = []
 
-    for query in queries[:6]:
+    for query in queries[:5]:
         raw_results.extend(
             tavily_search(
                 query,
-                max_results=4,
+                max_results=3,
             )
         )
 
@@ -43,8 +43,8 @@ def research_node(state: State) -> dict:
                 "title": result.get("title", ""),
                 "url": result.get("url", ""),
                 "score": result.get("score", 0),
-                "content": result.get("content", ""),
-                "raw_content": (result.get("raw_content", "")[:5000]),
+                "content": result.get("content", "")[:2000],
+                "raw_content": result.get("raw_content", "")[:2500],
             }
         )
 
