@@ -36,7 +36,9 @@ def worker_node(payload: dict) -> dict:
         "",
     )
 
-    result = writer_llm.with_structured_output(SectionOutput).invoke(
+    result = writer_llm.with_structured_output(
+        SectionOutput, method="json_mode"
+    ).invoke(
         [
             SystemMessage(content=WORKER_SYSTEM),
             HumanMessage(

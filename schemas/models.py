@@ -112,8 +112,6 @@ class RouterDecision(BaseModel):
 class SectionOutput(BaseModel):
     task_id: int
     markdown: str
-    summary: str
-    concepts_introduced: list[str] = Field(default_factory=list)
 
 
 class EditorialIssue(BaseModel):

@@ -1,54 +1,29 @@
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 
 from config.settings import (
-    EDITOR_MODEL,
-    PLANNER_MODEL,
-    RESEARCH_MODEL,
+    GEMINI_MODEL,
     REVISION_MODEL,
-    ROUTER_MODEL,
     WRITER_MODEL,
     rate_limiter,
 )
 
 
-def create_llm(
-    model: str,
-    *,
-    temperature: float,
-) -> ChatGroq:
-    return ChatGroq(
-        model=model,
-        temperature=temperature,
-        rate_limiter=rate_limiter,
-    )
-
-
-router_llm = create_llm(
-    ROUTER_MODEL,
-    temperature=0.1,
-)
-
-research_llm = create_llm(
-    RESEARCH_MODEL,
-    temperature=0.1,
-)
-
-planner_llm = create_llm(
-    PLANNER_MODEL,
+writer_llm = ChatGroq(
+    model=WRITER_MODEL,
     temperature=0.3,
+    rate_limiter=rate_limiter,
 )
 
-writer_llm = create_llm(
-    WRITER_MODEL,
-    temperature=0.5,
+
+revision_llm = ChatGroq(
+    model=REVISION_MODEL,
+    temperature=0.2,
+    rate_limiter=rate_limiter,
 )
 
-editor_llm = create_llm(
-    EDITOR_MODEL,
-    temperature=0.1,
-)
 
-revision_llm = create_llm(
-    REVISION_MODEL,
-    temperature=0.3,
+gemini_llm = ChatGoogleGenerativeAI(
+    model=GEMINI_MODEL,
+    temperature=0.2,
 )

@@ -2,7 +2,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from schemas.models import EditorialReview, Plan
 from schemas.state import State
-from services.llm import editor_llm
+from services.llm import gemini_llm
 from prompts.editor import EDITOR_SYSTEM
 
 
@@ -12,7 +12,7 @@ def editor_node(state: State) -> dict:
     if plan is None:
         raise ValueError("Plan is missing")
 
-    reviewer = editor_llm.with_structured_output(EditorialReview)
+    reviewer = gemini_llm.with_structured_output(EditorialReview)
 
     review = reviewer.invoke(
         [

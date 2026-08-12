@@ -2,12 +2,12 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from schemas.models import Plan
 from schemas.state import State
-from services.llm import planner_llm
+from services.llm import gemini_llm
 from prompts.planner import ORCH_SYSTEM
 
 
 def orchestrator_node(state: State) -> dict:
-    planner = planner_llm.with_structured_output(Plan)
+    planner = gemini_llm.with_structured_output(Plan)
 
     evidence = state.get("evidence", [])
 

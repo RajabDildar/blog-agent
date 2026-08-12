@@ -2,7 +2,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from schemas.models import ResearchPack
 from schemas.state import State
-from services.llm import research_llm
+from services.llm import gemini_llm
 from services.tavily import tavily_search
 from prompts.research import RESEARCH_SYSTEM
 
@@ -48,7 +48,7 @@ def research_node(state: State) -> dict:
             }
         )
 
-    extractor = research_llm.with_structured_output(ResearchPack)
+    extractor = gemini_llm.with_structured_output(ResearchPack)
 
     pack = extractor.invoke(
         [

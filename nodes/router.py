@@ -2,12 +2,12 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from schemas.models import RouterDecision
 from schemas.state import State
-from services.llm import router_llm
+from services.llm import gemini_llm
 from prompts.router import ROUTER_SYSTEM
 
 
 def router_node(state: State) -> dict:
-    decider = router_llm.with_structured_output(RouterDecision)
+    decider = gemini_llm.with_structured_output(RouterDecision)
 
     decision = decider.invoke(
         [

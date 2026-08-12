@@ -31,23 +31,26 @@ def generate_images_node(state: State) -> dict:
 
         task = next(task for task in plan.tasks if task.id == spec.section_id)
 
-        output_path = images_dir / spec.filename
+        filename = raw_spec["filename"]
+        prompt = raw_spec["prompt"]
+
+        output_path = images_dir / filename
 
         if not output_path.exists():
             try:
-                image_bytes = cloudflare_generate_image_bytes(spec.prompt)
+                image_bytes = cloudflare_generate_image_bytes(prompt)
 
                 output_path.write_bytes(image_bytes)
 
             except Exception as exc:
-                print(f"Image generation failed for {spec.filename}: {exc}")
+                print(f"Image generation failed for {filename}: {exc}")
                 continue
 
         markdown = insert_image(
             markdown=markdown,
             section=task.title,
             image=spec,
-            image_path=f"../images/{spec.filename}",
+            image_path=f"../images/{filename}",
         )
 
     save_blog(

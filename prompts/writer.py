@@ -49,4 +49,22 @@ Style:
 - no marketing language
 - no filler
 - no repetitive "AI can..." statements
+
+Return ONLY valid JSON matching this structure:
+
+{
+  "task_id": integer,
+  "markdown": string,
+  "summary": string,
+  "concepts_introduced": ["string"]
+}
+
+The markdown field contains the complete Markdown section,
+including its ## heading.
+
+Do not place Markdown outside the markdown field.
+Do not add commentary.
+Escape newlines inside JSON strings correctly.
+Do not return a function call.
+Do not wrap the JSON in ```json fences.
 """

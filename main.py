@@ -16,5 +16,3 @@ if __name__ == "__main__":
     print(f"Revisions: {result['revision_count']}")
 
     print(f"Images: {len(result['image_specs'])}")
-
-    print(f"editorial review: {result.editorial_review.model_dump()}")

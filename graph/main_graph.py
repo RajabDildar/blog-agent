@@ -63,41 +63,30 @@ def fanout(state: State):
     return sends
 
 
-def route_after_editor(
-    state: State,
-) -> Literal[
-    "revision",
-    "image_planner",
-]:
+def route_after_editor(state: State):
     review = state["editorial_review"]
 
     if review is None:
         raise ValueError("Editorial review missing")
 
+    # Article passed review.
     if review.approved:
         return "image_planner"
 
+    # Only allow one revision cycle.
     if state["revision_count"] >= 1:
         return "image_planner"
 
+    # Nothing specific to revise.
     if not review.sections_to_revise:
         return "image_planner"
 
-    return "revision"
-
-
-def revision_fanout(state: State):
-    review = state["editorial_review"]
-
-    if review is None:
-        return []
-
-    requested = set(review.sections_to_revise)
+    requested_ids = set(review.sections_to_revise)
 
     issue_map: dict[int, list[dict]] = {}
 
     for issue in review.issues:
-        if issue.task_id in requested:
+        if issue.task_id in requested_ids:
             issue_map.setdefault(
                 issue.task_id,
                 [],
@@ -105,11 +94,13 @@ def revision_fanout(state: State):
 
     sends = []
 
-    for section in state["sections"]:
-        if section.task_id not in requested:
+    for task_id in requested_ids:
+        section = state["sections"].get(task_id)
+
+        if section is None:
             continue
 
-        task = next(task for task in state["plan"].tasks if task.id == section.task_id)
+        task = next(task for task in state["plan"].tasks if task.id == task_id)
 
         sends.append(
             Send(
@@ -117,7 +108,10 @@ def revision_fanout(state: State):
                 {
                     "task": task.model_dump(),
                     "section": section.markdown,
-                    "issues": issue_map[section.task_id],
+                    "issues": issue_map.get(
+                        task_id,
+                        [],
+                    ),
                 },
             )
         )
@@ -231,9 +225,9 @@ builder.add_conditional_edges(
     route_after_editor,
 )
 
-builder.add_conditional_edges(
+builder.add_edge(
     "revision",
-    lambda state: "mark_revision",
+    "mark_revision",
 )
 
 builder.add_edge(

@@ -1,4 +1,5 @@
-from typing import TypedDict
+import operator
+from typing import Annotated, TypedDict
 
 from schemas.models import (
     EditorialReview,
@@ -21,7 +22,10 @@ class State(TypedDict):
 
     plan: Plan | None
 
-    sections: dict[int, SectionOutput]
+    sections: Annotated[
+        dict[int, SectionOutput],
+        operator.or_,
+    ]
 
     merged_md: str
 

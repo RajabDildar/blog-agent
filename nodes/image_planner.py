@@ -3,7 +3,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from schemas.models import GlobalImagePlan, Plan
 from schemas.state import State
 from services.image_prompt import build_image_prompt
-from services.llm import planner_llm
+from services.llm import gemini_llm
 from services.markdown import safe_filename
 from prompts.image import IMAGE_SYSTEM
 
@@ -14,7 +14,7 @@ def image_planner_node(state: State) -> dict:
     if plan is None:
         raise ValueError("Plan missing")
 
-    planner = planner_llm.with_structured_output(GlobalImagePlan)
+    planner = gemini_llm.with_structured_output(GlobalImagePlan)
 
     result = planner.invoke(
         [

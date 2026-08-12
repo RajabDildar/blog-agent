@@ -13,4 +13,5 @@ dependencies = [
     "pydantic>=2.13.4",
     "requests>=2.34.2",
     "tavily-python>=0.7.27",
+    "langchain-google-genai>=4.3.3",
 ]
