@@ -69,30 +69,33 @@ def route_after_editor(state: State):
     review = state["editorial_review"]
 
     if review is None:
-        raise ValueError("Editorial review missing")
+        raise ValueError("Editorial review missing.")
 
-    # Article passed review.
     if review.approved:
         return "image_planner"
 
-    # Only allow one revision cycle.
     if state["revision_count"] >= 1:
         return "image_planner"
-
-    # Nothing specific to revise.
-    if not review.sections_to_revise:
-        return "image_planner"
-
-    requested_ids = set(review.sections_to_revise)
 
     issue_map: dict[int, list[dict]] = {}
 
     for issue in review.issues:
-        if issue.task_id in requested_ids:
-            issue_map.setdefault(
-                issue.task_id,
-                [],
-            ).append(issue.model_dump())
+        if issue.task_id is None:
+            continue
+
+        issue_map.setdefault(
+            issue.task_id,
+            [],
+        ).append(issue.model_dump())
+
+    # Only revise sections that actually have
+    # concrete editor issues.
+    requested_ids = {
+        task_id for task_id in review.sections_to_revise if task_id in issue_map
+    }
+
+    if not requested_ids:
+        return "image_planner"
 
     sends = []
 
@@ -100,9 +103,17 @@ def route_after_editor(state: State):
         section = state["sections"].get(task_id)
 
         if section is None:
-            continue
+            raise ValueError(
+                f"Editor requested revision for missing section {task_id}."
+            )
 
-        task = next(task for task in state["plan"].tasks if task.id == task_id)
+        task = next(
+            (task for task in state["plan"].tasks if task.id == task_id),
+            None,
+        )
+
+        if task is None:
+            raise ValueError(f"Editor requested unknown task {task_id}.")
 
         sends.append(
             Send(
@@ -110,13 +121,13 @@ def route_after_editor(state: State):
                 {
                     "task": task.model_dump(),
                     "section": section.markdown,
-                    "issues": issue_map.get(
-                        task_id,
-                        [],
-                    ),
+                    "issues": issue_map[task_id],
                 },
             )
         )
+
+    if not sends:
+        return "image_planner"
 
     return sends
 

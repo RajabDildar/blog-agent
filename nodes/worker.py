@@ -8,6 +8,9 @@ from schemas.models import (
 )
 from services.llm import writer_llm
 from prompts.writer import WORKER_SYSTEM
+from services.section_validation import (
+    validate_section_markdown,
+)
 
 
 def worker_node(payload: dict) -> dict:
@@ -71,6 +74,17 @@ def worker_node(payload: dict) -> dict:
 
         if not result.markdown.strip():
             raise ValueError(f"Worker returned empty Markdown for task {task.id}.")
+
+        section_errors = validate_section_markdown(
+            result.markdown,
+            task.title,
+        )
+
+        if section_errors:
+            raise ValueError(
+                f"Invalid section {task.id}:\n"
+                + "\n".join(f"- {error}" for error in section_errors)
+            )
 
     except Exception as exc:
         raise RuntimeError(f"Worker failed: {exc}") from exc

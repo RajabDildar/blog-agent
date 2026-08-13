@@ -8,6 +8,9 @@ from schemas.models import (
 from schemas.state import State
 from services.llm import revision_llm
 from prompts.revision import REVISION_SYSTEM
+from services.section_validation import (
+    validate_section_markdown,
+)
 
 
 def revision_node(payload: dict) -> dict:
@@ -37,6 +40,17 @@ def revision_node(payload: dict) -> dict:
 
         if not result.markdown.strip():
             raise ValueError(f"Revision returned empty Markdown for task {task.id}.")
+
+        section_errors = validate_section_markdown(
+            result.markdown,
+            task.title,
+        )
+
+        if section_errors:
+            raise ValueError(
+                f"Revision produced invalid section "
+                f"{task.id}:\n" + "\n".join(f"- {error}" for error in section_errors)
+            )
 
     except Exception as exc:
         raise RuntimeError(f"Revision failed: {exc}") from exc

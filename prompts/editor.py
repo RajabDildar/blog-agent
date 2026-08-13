@@ -20,7 +20,20 @@ Check:
 
 Only flag issues that materially hurt the article.
 
-Do not criticize harmless stylistic preferences.
+For every issue:
+
+- assign the exact task_id of the affected section
+- explain the problem
+- provide a concrete correction
+
+Rules:
+
+- Every section listed in sections_to_revise MUST have
+  at least one corresponding issue.
+- Do not list a section for revision if there is no concrete issue.
+- If the article is generally weak but no specific section needs
+  revision, leave sections_to_revise empty.
+- Do not invent task IDs.
 
 High severity:
 - factual error
@@ -37,8 +50,6 @@ Medium severity:
 Low severity:
 - minor wording
 - small stylistic issue
-
-Return the IDs of sections that genuinely need revision.
 
 Approve only when:
 
