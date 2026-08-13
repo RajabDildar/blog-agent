@@ -39,3 +39,6 @@ GEMINI_MODEL = os.getenv(
     "GEMINI_MODEL",
     "gemini-3.1-flash-lite",
 )
+
+MAX_EDITORIAL_REVISIONS = 1
+MAX_ARTICLE_REPAIRS = 1

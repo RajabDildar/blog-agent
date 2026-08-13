@@ -33,9 +33,7 @@ def repair_node(
 
     markdown = state["merged_md"]
 
-    # =========================================================
     # 1. Deterministic repair
-    # =========================================================
 
     has_heading_error = any(
         (
@@ -55,9 +53,7 @@ def repair_node(
                 "article_repair_count": (state["article_repair_count"] + 1),
             }
 
-    # =========================================================
     # 2. LLM repair for remaining problems
-    # =========================================================
 
     try:
         repairer = revision_llm.with_structured_output(MarkdownRepairOutput)

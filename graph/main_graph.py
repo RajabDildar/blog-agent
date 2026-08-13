@@ -3,7 +3,11 @@ from typing import Literal
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
-from config.settings import groq_retry_policy
+from config.settings import (
+    groq_retry_policy,
+    MAX_EDITORIAL_REVISIONS,
+    MAX_ARTICLE_REPAIRS,
+)
 from nodes.editor import editor_node
 from nodes.image_generator import generate_images_node
 from nodes.image_planner import image_planner_node
@@ -68,6 +72,13 @@ def fanout(state: State):
     return sends
 
 
+def route_after_merge(state: State):
+    if state["revision_count"] >= MAX_EDITORIAL_REVISIONS:
+        return "article_validator"
+
+    return "editor"
+
+
 def route_after_editor(
     state: State,
 ):
@@ -78,10 +89,6 @@ def route_after_editor(
 
     # Approved article goes to structural validation.
     if review.approved:
-        return "article_validator"
-
-    # One editorial revision cycle maximum.
-    if state["revision_count"] >= 1:
         return "article_validator"
 
     issue_map: dict[int, list[dict]] = {}
@@ -135,22 +142,31 @@ def route_after_editor(
     return sends
 
 
-def mark_revision(
-    state: State,
-) -> dict:
-    return {"revision_count": (state["revision_count"] + 1)}
-
-
 def route_after_article_validation(
     state: State,
 ):
     if state["article_validation_passed"]:
         return "image_planner"
 
-    if state["article_repair_count"] < 1:
+    if state["article_repair_count"] < MAX_ARTICLE_REPAIRS:
         return "repair"
 
     return "article_validation_failure"
+
+
+def route_after_final_validation(
+    state: State,
+):
+    if state["final_validation_passed"]:
+        return "save"
+
+    return "final_validation_failure"
+
+
+def mark_revision(
+    state: State,
+) -> dict:
+    return {"revision_count": (state["revision_count"] + 1)}
 
 
 def article_validation_failure_node(
@@ -167,15 +183,6 @@ def article_validation_failure_node(
     )
 
 
-def route_after_final_validation(
-    state: State,
-):
-    if state["final_validation_passed"]:
-        return "save"
-
-    return "final_validation_failure"
-
-
 def final_validation_failure_node(
     state: State,
 ) -> dict:
@@ -190,210 +197,206 @@ def final_validation_failure_node(
     )
 
 
-builder = StateGraph(State)
-
-builder.add_node(
-    "router",
-    router_node,
-)
-
-builder.add_node(
-    "research",
-    research_node,
-)
-
-builder.add_node(
-    "orchestrator",
-    orchestrator_node,
-)
-
-builder.add_node(
-    "worker",
-    worker_node,
-    retry=groq_retry_policy,
-)
-
-builder.add_node(
-    "article_validator",
-    article_validator_node,
-)
-
-builder.add_node(
-    "repair",
-    repair_node,
-    retry=groq_retry_policy,
-)
-
-builder.add_node(
-    "article_validation_failure",
-    article_validation_failure_node,
-)
-
-builder.add_node(
-    "final_validation_failure",
-    final_validation_failure_node,
-)
-
-builder.add_node(
-    "merge",
-    merge_content,
-)
-
-builder.add_node(
-    "editor",
-    editor_node,
-)
-
-builder.add_node(
-    "revision",
-    revision_node,
-    retry=groq_retry_policy,
-)
-
-builder.add_node(
-    "mark_revision",
-    mark_revision,
-)
-
-builder.add_node(
-    "image_planner",
-    image_planner_node,
-)
-
-builder.add_node(
-    "image_generator",
-    generate_images_node,
-)
-
-builder.add_node(
-    "validator",
-    validator_node,
-)
-
-builder.add_node(
-    "save",
-    save_node,
-)
+# Building graph
 
 
-builder.add_edge(
-    START,
-    "router",
-)
+def build_graph():
+    builder = StateGraph(State)
 
-builder.add_conditional_edges(
-    "router",
-    route_next,
-    {
-        "research": "research",
-        "orchestrator": "orchestrator",
-    },
-)
+    # ----------------------- Nodes ---------------------------
 
-builder.add_edge(
-    "research",
-    "orchestrator",
-)
+    builder.add_node(
+        "router",
+        router_node,
+    )
 
-builder.add_conditional_edges(
-    "orchestrator",
-    fanout,
-    ["worker"],
-)
+    builder.add_node(
+        "research",
+        research_node,
+    )
 
-builder.add_edge(
-    "worker",
-    "merge",
-)
+    builder.add_node(
+        "orchestrator",
+        orchestrator_node,
+    )
 
-builder.add_edge(
-    "merge",
-    "editor",
-)
+    builder.add_node(
+        "worker",
+        worker_node,
+        retry=groq_retry_policy,
+    )
 
-builder.add_conditional_edges(
-    "editor",
-    route_after_editor,
-)
+    builder.add_node(
+        "merge",
+        merge_content,
+    )
 
-builder.add_edge(
-    "revision",
-    "mark_revision",
-)
+    builder.add_node(
+        "editor",
+        editor_node,
+    )
 
-builder.add_edge(
-    "mark_revision",
-    "merge",
-)
+    builder.add_node(
+        "revision",
+        revision_node,
+        retry=groq_retry_policy,
+    )
 
-builder.add_edge(
-    "image_planner",
-    "image_generator",
-)
+    builder.add_node(
+        "mark_revision",
+        mark_revision,
+    )
 
-builder.add_edge(
-    "image_generator",
-    "validator",
-)
+    builder.add_node(
+        "article_validator",
+        article_validator_node,
+    )
 
-builder.add_conditional_edges(
-    "validator",
-    route_after_final_validation,
-    {
-        "save": "save",
-        "final_validation_failure": ("final_validation_failure"),
-    },
-)
+    builder.add_node(
+        "repair",
+        repair_node,
+        retry=groq_retry_policy,
+    )
+
+    builder.add_node(
+        "article_validation_failure",
+        article_validation_failure_node,
+    )
+
+    builder.add_node(
+        "image_planner",
+        image_planner_node,
+    )
+
+    builder.add_node(
+        "image_generator",
+        generate_images_node,
+    )
+
+    builder.add_node(
+        "validator",
+        validator_node,
+    )
+
+    builder.add_node(
+        "final_validation_failure",
+        final_validation_failure_node,
+    )
+
+    builder.add_node(
+        "save",
+        save_node,
+    )
+
+    # ----------------------- Edges ---------------------------
+
+    builder.add_edge(
+        START,
+        "router",
+    )
+
+    builder.add_conditional_edges(
+        "router",
+        route_next,
+        {
+            "research": "research",
+            "orchestrator": "orchestrator",
+        },
+    )
+
+    builder.add_edge(
+        "research",
+        "orchestrator",
+    )
+
+    builder.add_conditional_edges(
+        "orchestrator",
+        fanout,
+        ["worker"],
+    )
+
+    builder.add_edge(
+        "worker",
+        "merge",
+    )
+
+    builder.add_conditional_edges(
+        "merge",
+        route_after_merge,
+        {
+            "editor": "editor",
+            "article_validator": "article_validator",
+        },
+    )
+
+    builder.add_conditional_edges(
+        "editor",
+        route_after_editor,
+    )
+
+    builder.add_edge(
+        "revision",
+        "mark_revision",
+    )
+
+    builder.add_edge(
+        "mark_revision",
+        "merge",
+    )
+
+    builder.add_conditional_edges(
+        "article_validator",
+        route_after_article_validation,
+        {
+            "image_planner": "image_planner",
+            "repair": "repair",
+            "article_validation_failure": ("article_validation_failure"),
+        },
+    )
+
+    builder.add_edge(
+        "repair",
+        "article_validator",
+    )
+
+    builder.add_edge(
+        "article_validation_failure",
+        END,
+    )
+
+    builder.add_edge(
+        "image_planner",
+        "image_generator",
+    )
+
+    builder.add_edge(
+        "image_generator",
+        "validator",
+    )
+
+    builder.add_conditional_edges(
+        "validator",
+        route_after_final_validation,
+        {
+            "save": "save",
+            "final_validation_failure": ("final_validation_failure"),
+        },
+    )
+
+    builder.add_edge(
+        "save",
+        END,
+    )
+
+    builder.add_edge(
+        "final_validation_failure",
+        END,
+    )
+
+    return builder.compile()
 
 
-builder.add_edge(
-    "revision",
-    "mark_revision",
-)
-
-builder.add_edge(
-    "mark_revision",
-    "merge",
-)
-
-builder.add_edge(
-    "merge",
-    "article_validator",
-)
-
-
-builder.add_conditional_edges(
-    "article_validator",
-    route_after_article_validation,
-    {
-        "image_planner": "image_planner",
-        "repair": "repair",
-        "article_validation_failure": ("article_validation_failure"),
-    },
-)
-
-builder.add_edge(
-    "repair",
-    "article_validator",
-)
-
-builder.add_edge(
-    "save",
-    END,
-)
-
-builder.add_edge(
-    "article_validation_failure",
-    END,
-)
-
-builder.add_edge(
-    "final_validation_failure",
-    END,
-)
-
-
-app = builder.compile()
+app = build_graph()
 
 
 def run(topic: str):
