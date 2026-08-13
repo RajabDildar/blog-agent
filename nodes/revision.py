@@ -43,7 +43,7 @@ def revision_node(payload: dict) -> dict:
 
         section_errors = validate_section_markdown(
             result.markdown,
-            task.title,
+            expected_title=task.title,
         )
 
         if section_errors:

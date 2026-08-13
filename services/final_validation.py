@@ -1,0 +1,55 @@
+import re
+from pathlib import Path
+
+from services.markdown_validation import (
+    validate_article_markdown,
+)
+
+
+IMAGE_PATTERN = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
+
+
+def validate_final_artifact(
+    markdown: str,
+    *,
+    expected_sections: list[str],
+    image_results: list[dict],
+) -> list[str]:
+    errors = validate_article_markdown(
+        markdown,
+        expected_sections=expected_sections,
+    )
+
+    references = IMAGE_PATTERN.findall(markdown)
+
+    expected_paths = {
+        result["markdown_path"]
+        for result in image_results
+        if result["status"] == "inserted"
+    }
+
+    actual_paths = set(references)
+
+    for path in expected_paths:
+        if path not in actual_paths:
+            errors.append(f"Generated image is not embedded: {path}")
+
+    for path in actual_paths:
+        if path.startswith(
+            (
+                "http://",
+                "https://",
+            )
+        ):
+            continue
+
+        filesystem_path = (Path("generated_blogs") / path).resolve()
+
+        if not filesystem_path.exists():
+            errors.append(f"Referenced image does not exist: {path}")
+
+    for result in image_results:
+        if result["status"] != "inserted":
+            errors.append(f"Image {result['id']} was not inserted.")
+
+    return errors

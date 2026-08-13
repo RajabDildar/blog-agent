@@ -17,6 +17,9 @@ from nodes.worker import worker_node
 from nodes.repair import repair_node
 from nodes.save import save_node
 from schemas.state import State
+from nodes.article_validator import (
+    article_validator_node,
+)
 
 
 def fanout(state: State):
@@ -65,17 +68,21 @@ def fanout(state: State):
     return sends
 
 
-def route_after_editor(state: State):
+def route_after_editor(
+    state: State,
+):
     review = state["editorial_review"]
 
     if review is None:
         raise ValueError("Editorial review missing.")
 
+    # Approved article goes to structural validation.
     if review.approved:
-        return "image_planner"
+        return "article_validator"
 
+    # One editorial revision cycle maximum.
     if state["revision_count"] >= 1:
-        return "image_planner"
+        return "article_validator"
 
     issue_map: dict[int, list[dict]] = {}
 
@@ -88,24 +95,23 @@ def route_after_editor(state: State):
             [],
         ).append(issue.model_dump())
 
-    # Only revise sections that actually have
-    # concrete editor issues.
     requested_ids = {
         task_id for task_id in review.sections_to_revise if task_id in issue_map
     }
 
     if not requested_ids:
-        return "image_planner"
+        return "article_validator"
 
     sends = []
+
+    if state["plan"] is None:
+        raise ValueError("Plan missing during revision routing.")
 
     for task_id in requested_ids:
         section = state["sections"].get(task_id)
 
         if section is None:
-            raise ValueError(
-                f"Editor requested revision for missing section {task_id}."
-            )
+            raise ValueError(f"Missing section {task_id} requested for revision.")
 
         task = next(
             (task for task in state["plan"].tasks if task.id == task_id),
@@ -113,7 +119,7 @@ def route_after_editor(state: State):
         )
 
         if task is None:
-            raise ValueError(f"Editor requested unknown task {task_id}.")
+            raise ValueError(f"Unknown task ID {task_id}.")
 
         sends.append(
             Send(
@@ -126,9 +132,6 @@ def route_after_editor(state: State):
             )
         )
 
-    if not sends:
-        return "image_planner"
-
     return sends
 
 
@@ -138,24 +141,51 @@ def mark_revision(
     return {"revision_count": (state["revision_count"] + 1)}
 
 
-def route_after_validation(state: State):
-    if state["validation_passed"]:
-        return "save"
+def route_after_article_validation(
+    state: State,
+):
+    if state["article_validation_passed"]:
+        return "image_planner"
 
-    if state["repair_count"] < 1:
+    if state["article_repair_count"] < 1:
         return "repair"
 
-    return "fail"
+    return "article_validation_failure"
 
 
-def validation_failure_node(state: State) -> dict:
+def article_validation_failure_node(
+    state: State,
+) -> dict:
     errors = state.get(
-        "validation_errors",
+        "article_validation_errors",
         [],
     )
 
     raise RuntimeError(
-        "Final Markdown validation failed after repair attempt:\n"
+        "Article validation failed after repair:\n"
+        + "\n".join(f"- {error}" for error in errors)
+    )
+
+
+def route_after_final_validation(
+    state: State,
+):
+    if state["final_validation_passed"]:
+        return "save"
+
+    return "final_validation_failure"
+
+
+def final_validation_failure_node(
+    state: State,
+) -> dict:
+    errors = state.get(
+        "final_validation_errors",
+        [],
+    )
+
+    raise RuntimeError(
+        "Final artifact validation failed:\n"
         + "\n".join(f"- {error}" for error in errors)
     )
 
@@ -181,6 +211,27 @@ builder.add_node(
     "worker",
     worker_node,
     retry=groq_retry_policy,
+)
+
+builder.add_node(
+    "article_validator",
+    article_validator_node,
+)
+
+builder.add_node(
+    "repair",
+    repair_node,
+    retry=groq_retry_policy,
+)
+
+builder.add_node(
+    "article_validation_failure",
+    article_validation_failure_node,
+)
+
+builder.add_node(
+    "final_validation_failure",
+    final_validation_failure_node,
 )
 
 builder.add_node(
@@ -217,17 +268,6 @@ builder.add_node(
 builder.add_node(
     "validator",
     validator_node,
-)
-
-builder.add_node(
-    "validation_failure",
-    validation_failure_node,
-)
-
-builder.add_node(
-    "repair",
-    repair_node,
-    retry=groq_retry_policy,
 )
 
 builder.add_node(
@@ -298,17 +338,43 @@ builder.add_edge(
 
 builder.add_conditional_edges(
     "validator",
-    route_after_validation,
+    route_after_final_validation,
     {
         "save": "save",
+        "final_validation_failure": ("final_validation_failure"),
+    },
+)
+
+
+builder.add_edge(
+    "revision",
+    "mark_revision",
+)
+
+builder.add_edge(
+    "mark_revision",
+    "merge",
+)
+
+builder.add_edge(
+    "merge",
+    "article_validator",
+)
+
+
+builder.add_conditional_edges(
+    "article_validator",
+    route_after_article_validation,
+    {
+        "image_planner": "image_planner",
         "repair": "repair",
-        "fail": "validation_failure",
+        "article_validation_failure": ("article_validation_failure"),
     },
 )
 
 builder.add_edge(
     "repair",
-    "validator",
+    "article_validator",
 )
 
 builder.add_edge(
@@ -317,7 +383,12 @@ builder.add_edge(
 )
 
 builder.add_edge(
-    "validation_failure",
+    "article_validation_failure",
+    END,
+)
+
+builder.add_edge(
+    "final_validation_failure",
     END,
 )
 
@@ -343,9 +414,11 @@ def run(topic: str):
             "image_specs": [],
             "image_results": [],
             "final": "",
-            "validation_errors": [],
-            "validation_passed": False,
-            "repair_count": 0,
+            "article_validation_errors": [],
+            "article_validation_passed": False,
+            "article_repair_count": 0,
+            "final_validation_errors": [],
+            "final_validation_passed": False,
             "saved_path": "",
         },
         {

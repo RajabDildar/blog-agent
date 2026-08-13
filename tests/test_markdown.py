@@ -1,4 +1,4 @@
-from nodes.validator import validate_markdown
+from services.markdown_validation import validate_article_markdown
 
 
 def test_valid_markdown():
@@ -13,13 +13,12 @@ Some content.
 More content.
 """
 
-    errors = validate_markdown(
+    errors = validate_article_markdown(
         markdown,
         expected_sections=[
             "First Section",
             "Second Section",
         ],
-        image_results=[],
     )
 
     assert errors == []
@@ -33,12 +32,11 @@ def test_detects_multiple_h1():
 ## Section
 """
 
-    errors = validate_markdown(
+    errors = validate_article_markdown(
         markdown,
         expected_sections=[
             "Section",
         ],
-        image_results=[],
     )
 
     assert any("exactly one H1" in error for error in errors)
@@ -53,12 +51,11 @@ def test_detects_unclosed_code_fence():
 print("hello")
 """
 
-    errors = validate_markdown(
+    errors = validate_article_markdown(
         markdown,
         expected_sections=[
             "Section",
         ],
-        image_results=[],
     )
 
     assert any("Unclosed Markdown code fence" in error for error in errors)
@@ -72,12 +69,11 @@ def test_detects_wrong_heading_level():
 Content.
 """
 
-    errors = validate_markdown(
+    errors = validate_article_markdown(
         markdown,
         expected_sections=[
             "Section",
         ],
-        image_results=[],
     )
 
     assert any("Invalid heading level" in error for error in errors)

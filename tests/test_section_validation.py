@@ -11,7 +11,7 @@ Content here.
 
     errors = validate_section_markdown(
         markdown,
-        "The State of the Agentic Stack",
+        expected_title="The State of the Agentic Stack",
     )
 
     assert errors == []
@@ -25,7 +25,7 @@ Content here.
 
     errors = validate_section_markdown(
         markdown,
-        "The State of the Agentic Stack",
+        expected_title="The State of the Agentic Stack",
     )
 
     assert "Section heading must be H2." in errors
@@ -41,7 +41,7 @@ Content.
 
     errors = validate_section_markdown(
         markdown,
-        "The State of the Agentic Stack",
+        expected_title="The State of the Agentic Stack",
     )
 
     assert any("exactly one heading" in error for error in errors)
@@ -55,7 +55,7 @@ Content.
 
     errors = validate_section_markdown(
         markdown,
-        "The State of the Agentic Stack",
+        expected_title="The State of the Agentic Stack",
     )
 
     assert any("Expected heading" in error for error in errors)

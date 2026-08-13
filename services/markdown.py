@@ -3,7 +3,7 @@ import re
 from schemas.models import ImageSpec
 
 
-def safe_filename(value: str) -> str:
+def safe_stem(value: str) -> str:
     value = value.lower()
 
     value = re.sub(
@@ -12,9 +12,15 @@ def safe_filename(value: str) -> str:
         value,
     )
 
-    value = value.strip("_")
+    return value.strip("_")
 
-    return f"{value}.png"
+
+def safe_image_filename(value: str) -> str:
+    return f"{safe_stem(value)}.png"
+
+
+def safe_blog_filename(value: str) -> str:
+    return f"{safe_stem(value)}.md"
 
 
 def _find_section_bounds(

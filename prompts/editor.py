@@ -20,20 +20,12 @@ Check:
 
 Only flag issues that materially hurt the article.
 
-For every issue:
+Every issue must identify the exact task_id it belongs to.
 
-- assign the exact task_id of the affected section
-- explain the problem
-- provide a concrete correction
+Every section in sections_to_revise MUST have at least one
+corresponding issue.
 
-Rules:
-
-- Every section listed in sections_to_revise MUST have
-  at least one corresponding issue.
-- Do not list a section for revision if there is no concrete issue.
-- If the article is generally weak but no specific section needs
-  revision, leave sections_to_revise empty.
-- Do not invent task IDs.
+Never request revision for a section without a concrete issue.
 
 High severity:
 - factual error
@@ -54,5 +46,5 @@ Low severity:
 Approve only when:
 
 - score >= 8
-- there are no high-severity issues
+- no high-severity issues exist
 """

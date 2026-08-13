@@ -25,6 +25,4 @@ if __name__ == "__main__":
 
     print(f"Images inserted: {len(result['image_results'])}")
 
-    print(f"Validation repairs: {result['repair_count']}")
-
     print(f"Saved to: {result['saved_path']}")

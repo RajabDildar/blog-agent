@@ -4,7 +4,7 @@ from prompts.image import IMAGE_SYSTEM
 from schemas.models import GlobalImagePlan, Plan
 from schemas.state import State
 from services.llm import gemini_llm
-from services.markdown import safe_filename
+from services.markdown import safe_image_filename
 
 
 def image_planner_node(state: State) -> dict:
@@ -49,7 +49,7 @@ def image_planner_node(state: State) -> dict:
 
             image_data = image.model_dump()
 
-            image_data["filename"] = safe_filename(
+            image_data["filename"] = safe_image_filename(
                 f"{image.section_id}_{task.title}_{image.id}"
             )
 

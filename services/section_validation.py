@@ -3,13 +3,13 @@ import re
 
 def validate_section_markdown(
     markdown: str,
+    *,
     expected_title: str,
 ) -> list[str]:
     errors: list[str] = []
 
     if not markdown.strip():
-        errors.append("Section Markdown is empty.")
-        return errors
+        return ["Section Markdown is empty."]
 
     headings = re.findall(
         r"^(#{1,6})\s+(.+?)\s*$",
@@ -17,12 +17,10 @@ def validate_section_markdown(
         re.MULTILINE,
     )
 
-    if not headings:
-        errors.append("Section has no heading.")
-        return errors
-
     if len(headings) != 1:
         errors.append("Section must contain exactly one heading.")
+
+        return errors
 
     level, title = headings[0]
 
@@ -30,9 +28,7 @@ def validate_section_markdown(
         errors.append("Section heading must be H2.")
 
     if title.strip() != expected_title.strip():
-        errors.append(
-            f"Expected heading '## {expected_title}' but received '## {title}'."
-        )
+        errors.append(f"Expected heading '## {expected_title}', got '## {title}'.")
 
     code_fences = re.findall(
         r"```",

@@ -77,13 +77,13 @@ def worker_node(payload: dict) -> dict:
 
         section_errors = validate_section_markdown(
             result.markdown,
-            task.title,
+            expected_title=task.title,
         )
 
         if section_errors:
             raise ValueError(
-                f"Invalid section {task.id}:\n"
-                + "\n".join(f"- {error}" for error in section_errors)
+                f"Worker produced invalid section "
+                f"{task.id}:\n" + "\n".join(f"- {error}" for error in section_errors)
             )
 
     except Exception as exc:

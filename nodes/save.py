@@ -2,16 +2,15 @@ from schemas.state import State
 from services.storage import save_blog
 
 
-def save_node(state: State) -> dict:
+def save_node(
+    state: State,
+) -> dict:
     plan = state["plan"]
 
     if plan is None:
         raise ValueError("Save: plan is missing.")
 
-    if not state.get(
-        "validation_passed",
-        False,
-    ):
+    if not state["final_validation_passed"]:
         raise RuntimeError("Refusing to save because final validation failed.")
 
     markdown = state["final"].strip()
@@ -28,6 +27,5 @@ def save_node(state: State) -> dict:
         raise RuntimeError(f"Failed to save blog: {exc}") from exc
 
     return {
-        "final": markdown,
         "saved_path": str(path),
     }

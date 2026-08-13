@@ -37,8 +37,13 @@ class State(TypedDict):
 
     final: str
 
-    validation_errors: list[str]
-    validation_passed: bool
-    repair_count: int
+    # Article validation.
+    article_validation_errors: list[str]
+    article_validation_passed: bool
+    article_repair_count: int
+
+    # Final artifact validation.
+    final_validation_errors: list[str]
+    final_validation_passed: bool
 
     saved_path: str

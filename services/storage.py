@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from services.markdown import safe_filename
+from services.markdown import safe_blog_filename
 
 
 def save_blog(
@@ -15,7 +15,7 @@ def save_blog(
         exist_ok=True,
     )
 
-    filename = safe_filename(title)
+    filename = safe_blog_filename(title)
 
     path = directory / filename
 
