@@ -19,16 +19,14 @@ def validate_section_markdown(
 
     if len(headings) != 1:
         errors.append("Section must contain exactly one heading.")
+    else:
+        level, title = headings[0]
 
-        return errors
+        if level != "##":
+            errors.append("Section heading must be H2.")
 
-    level, title = headings[0]
-
-    if level != "##":
-        errors.append("Section heading must be H2.")
-
-    if title.strip() != expected_title.strip():
-        errors.append(f"Expected heading '## {expected_title}', got '## {title}'.")
+        if title.strip() != expected_title.strip():
+            errors.append(f"Expected heading '## {expected_title}', got '## {title}'.")
 
     code_fences = re.findall(
         r"```",

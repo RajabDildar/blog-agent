@@ -223,7 +223,7 @@ def build_graph():
     builder.add_node(
         "worker",
         worker_node,
-        retry=groq_retry_policy,
+        retry_policy=groq_retry_policy,
     )
 
     builder.add_node(
@@ -239,7 +239,7 @@ def build_graph():
     builder.add_node(
         "revision",
         revision_node,
-        retry=groq_retry_policy,
+        retry_policy=groq_retry_policy,
     )
 
     builder.add_node(
@@ -255,7 +255,7 @@ def build_graph():
     builder.add_node(
         "repair",
         repair_node,
-        retry=groq_retry_policy,
+        retry_policy=groq_retry_policy,
     )
 
     builder.add_node(

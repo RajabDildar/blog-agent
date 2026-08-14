@@ -50,29 +50,23 @@ Style:
 - no filler
 - no repetitive "AI can..." statements
 
-Return ONLY valid JSON matching this structure:
+Return ONLY valid JSON matching:
 
 {
-  "task_id": integer,
-  "markdown": string,
-  "summary": string,
-  "concepts_introduced": ["string"]
+  "markdown": "string"
 }
-
-- Escape newlines inside JSON strings correctly.
-- Do not return a function call.
 
 Markdown rules:
 
 - Return exactly one complete H2 section.
 - The section must start with exactly one `##` heading.
+- The heading must exactly match the assigned section title.
 - Never create an H1.
 - Never create H3, H4, H5, or H6 headings.
 - Do not create additional headings inside the section.
 - Close every Markdown code fence.
 - Never leave an unfinished code block.
 - Do not wrap the entire response in a Markdown code fence.
-- Use valid Markdown only.
 - Do not output JSON outside the structured output.
 - Do not add commentary outside the markdown field.
 """

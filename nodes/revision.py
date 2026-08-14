@@ -1,16 +1,56 @@
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from schemas.models import (
-    EditorialIssue,
-    SectionOutput,
-    Task,
-)
+from schemas.models import EditorialIssue, SectionOutput, Task, MarkdownRepairOutput
 from schemas.state import State
 from services.llm import revision_llm
 from prompts.revision import REVISION_SYSTEM
 from services.section_validation import (
     validate_section_markdown,
 )
+from prompts.writer_repair import WRITER_REPAIR_SYSTEM
+
+
+def _validate_section(
+    markdown: str,
+    *,
+    task: Task,
+) -> list[str]:
+    return validate_section_markdown(
+        markdown,
+        expected_title=task.title,
+    )
+
+
+def _repair_section(
+    *,
+    task: Task,
+    markdown: str,
+    errors: list[str],
+) -> str:
+    repairer = revision_llm.with_structured_output(MarkdownRepairOutput)
+
+    result = repairer.invoke(
+        [
+            SystemMessage(content=WRITER_REPAIR_SYSTEM),
+            HumanMessage(
+                content=(
+                    f"Task title:\n"
+                    f"{task.title}\n\n"
+                    f"Task goal:\n"
+                    f"{task.goal}\n\n"
+                    f"Validation errors:\n"
+                    f"{errors}\n\n"
+                    f"Current Markdown:\n"
+                    f"{markdown}"
+                )
+            ),
+        ]
+    )
+
+    if not result.markdown.strip():
+        raise ValueError(f"Revision repair returned empty Markdown for task {task.id}.")
+
+    return result.markdown
 
 
 def revision_node(payload: dict) -> dict:
@@ -19,7 +59,10 @@ def revision_node(payload: dict) -> dict:
 
         issues = [EditorialIssue(**issue) for issue in payload["issues"]]
 
-        result = revision_llm.with_structured_output(SectionOutput).invoke(
+        result = revision_llm.with_structured_output(
+            SectionOutput,
+            method="json_mode",
+        ).invoke(
             [
                 SystemMessage(content=REVISION_SYSTEM),
                 HumanMessage(
@@ -33,26 +76,45 @@ def revision_node(payload: dict) -> dict:
             ]
         )
 
-        if result.task_id != task.id:
-            raise ValueError(
-                f"Revision returned task_id={result.task_id}, expected {task.id}."
-            )
+        markdown = result.markdown.strip()
 
-        if not result.markdown.strip():
+        if not markdown:
             raise ValueError(f"Revision returned empty Markdown for task {task.id}.")
 
-        section_errors = validate_section_markdown(
-            result.markdown,
-            expected_title=task.title,
+        errors = _validate_section(
+            markdown,
+            task=task,
         )
 
-        if section_errors:
-            raise ValueError(
-                f"Revision produced invalid section "
-                f"{task.id}:\n" + "\n".join(f"- {error}" for error in section_errors)
+        # One section-level recovery attempt.
+        if errors:
+            markdown = _repair_section(
+                task=task,
+                markdown=markdown,
+                errors=errors,
+            ).strip()
+
+            # Validate repaired output again.
+            errors = _validate_section(
+                markdown,
+                task=task,
             )
+
+            if errors:
+                raise ValueError(
+                    f"Revision produced invalid section {task.id} "
+                    f"after repair:\n" + "\n".join(f"- {error}" for error in errors)
+                )
+
+        section = SectionOutput(
+            markdown=markdown,
+        )
 
     except Exception as exc:
         raise RuntimeError(f"Revision failed: {exc}") from exc
 
-    return {"sections": {result.task_id: result}}
+    return {
+        "sections": {
+            task.id: section,
+        }
+    }

@@ -62,4 +62,14 @@ statistics and other time-sensitive claims.
 
 open_book:
 Ground current claims in the supplied evidence.
+
+Time and research consistency:
+
+The application provides the current date and current year.
+
+When creating the article plan:
+- Do not invent a newer or older current year.
+- If the topic is current or time-sensitive, base current framing on the supplied evidence.
+- Do not label the article as being "in [year]" unless that year is supported by the supplied current date or evidence.
+- Do not treat the current year as evidence of facts about that year.
 """

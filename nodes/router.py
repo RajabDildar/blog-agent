@@ -4,6 +4,7 @@ from schemas.models import RouterDecision
 from schemas.state import State
 from services.llm import gemini_llm
 from prompts.router import ROUTER_SYSTEM
+from services.time import current_date, current_year
 
 
 def router_node(state: State) -> dict:
@@ -13,7 +14,13 @@ def router_node(state: State) -> dict:
         decision = decider.invoke(
             [
                 SystemMessage(content=ROUTER_SYSTEM),
-                HumanMessage(content=f"Topic:\n{state['topic']}"),
+                HumanMessage(
+                    content=(
+                        f"Current date: {current_date()}\n"
+                        f"Current year: {current_year()}\n\n"
+                        f"Topic:\n{state['topic']}"
+                    )
+                ),
             ]
         )
 

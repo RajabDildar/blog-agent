@@ -25,5 +25,13 @@ Queries must:
 - describe a specific information need
 - avoid generic searches
 - avoid repeating the same intent
-- contain current-year terms when freshness matters
+
+You are given the current date and current year.
+
+When freshness matters:
+- Use the supplied current year in current-year searches.
+- Do not infer a different year.
+- Do not use an older year unless the search is intentionally historical.
+
+For example, if the current year is 2026, a current trend query should use 2026, not 2024.
 """

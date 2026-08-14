@@ -25,9 +25,8 @@ def validate_article_markdown(
     if len(h1s) != 1:
         errors.append(f"Expected exactly one H1, found {len(h1s)}.")
 
-    if h1s:
-        if not markdown.startswith(f"# {h1s[0]}"):
-            errors.append("Document must begin with its H1 title.")
+    if h1s and not markdown.startswith(f"# {h1s[0]}"):
+        errors.append("Document must begin with its H1 title.")
 
     for level, title in headings:
         if len(level) > 2:

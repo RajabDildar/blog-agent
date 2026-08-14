@@ -110,7 +110,6 @@ class RouterDecision(BaseModel):
 
 
 class SectionOutput(BaseModel):
-    task_id: int
     markdown: str
 
 

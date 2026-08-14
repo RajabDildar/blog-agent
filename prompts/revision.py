@@ -12,6 +12,12 @@ Do not:
 - change the article structure
 - add filler
 
+Return ONLY valid JSON matching:
+
+{
+  "markdown": "string"
+}
+
 Markdown rules:
 
 - Start with exactly one H2 heading.
