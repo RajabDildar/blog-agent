@@ -126,3 +126,88 @@ def find_unclosed_fence(markdown: str) -> int | None:
             open_line = 0
 
     return open_line or None
+
+
+@dataclass(frozen=True, slots=True)
+class SectionBounds:
+    heading_start_line: int
+    heading_end_line: int
+    section_end_line: int
+
+
+TOP_LEVEL_BODY_TYPES = {
+    "paragraph_open",
+    "fence",
+    "code_block",
+    "blockquote_open",
+    "bullet_list_open",
+    "ordered_list_open",
+    "table_open",
+    "html_block",
+    "hr",
+}
+
+
+def find_h2_section_bounds(
+    markdown: str,
+    section_title: str,
+) -> SectionBounds:
+    tokens = parse_markdown(markdown)
+
+    for index, token in enumerate(tokens):
+        if token.type != "heading_open" or token.tag != "h2":
+            continue
+
+        inline = tokens[index + 1] if index + 1 < len(tokens) else None
+
+        if inline is None or inline.type != "inline":
+            continue
+
+        if inline.content.strip() != section_title.strip():
+            continue
+
+        if token.map is None:
+            break
+
+        section_end_line = len(markdown.splitlines())
+
+        for next_token in tokens[index + 1 :]:
+            if (
+                next_token.type == "heading_open"
+                and next_token.tag == "h2"
+                and next_token.map is not None
+            ):
+                section_end_line = next_token.map[0]
+                break
+
+        return SectionBounds(
+            heading_start_line=(token.map[0]),
+            heading_end_line=(token.map[1]),
+            section_end_line=(section_end_line),
+        )
+
+    raise ValueError(f"Section not found for image insertion: {section_title}")
+
+
+def find_first_body_block_end(
+    markdown: str,
+    *,
+    start_line: int,
+    end_line: int,
+) -> int:
+    for token in parse_markdown(markdown):
+        if token.level != 0 or token.map is None:
+            continue
+
+        token_start, token_end = token.map
+
+        if token_start < start_line or token_start >= end_line:
+            continue
+
+        if token.type in TOP_LEVEL_BODY_TYPES:
+            return min(
+                token_end,
+                end_line,
+            )
+
+    return start_line

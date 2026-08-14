@@ -1,6 +1,9 @@
 from schemas.state import State
 from services.final_validation import (
-    validate_final_artifact,
+    validate_final_images,
+)
+from services.markdown_quality import (
+    run_markdown_quality_gate,
 )
 
 
@@ -14,17 +17,29 @@ def validator_node(
 
     expected_sections = [task.title for task in plan.tasks]
 
-    errors = validate_final_artifact(
+    # No LLM repair here.
+    gate = run_markdown_quality_gate(
         state["final"],
-        expected_sections=expected_sections,
+        profile="article",
         expected_title=plan.blog_title,
-        image_results=state.get(
-            "image_results",
-            [],
-        ),
+        expected_sections=expected_sections,
     )
 
+    errors = list(gate.errors)
+
+    if not errors:
+        errors.extend(
+            validate_final_images(
+                gate.markdown,
+                image_results=state.get(
+                    "image_results",
+                    [],
+                ),
+            )
+        )
+
     return {
+        "final": gate.markdown,
         "final_validation_errors": errors,
         "final_validation_passed": not errors,
     }

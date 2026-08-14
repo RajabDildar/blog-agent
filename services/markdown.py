@@ -1,6 +1,11 @@
 import re
 
 from schemas.models import ImageSpec
+from services.markdown_parser import (
+    find_first_body_block_end,
+    find_h2_section_bounds,
+    get_image_sources,
+)
 
 
 def safe_stem(value: str) -> str:
@@ -15,91 +20,53 @@ def safe_stem(value: str) -> str:
     return value.strip("_")
 
 
-def safe_image_filename(value: str) -> str:
+def safe_image_filename(
+    value: str,
+) -> str:
     return f"{safe_stem(value)}.png"
 
 
-def safe_blog_filename(value: str) -> str:
+def safe_blog_filename(
+    value: str,
+) -> str:
     return f"{safe_stem(value)}.md"
 
 
-def _find_section_bounds(
+def _line_to_offset(
     markdown: str,
-    section: str,
-) -> tuple[int, int, int]:
-    pattern = re.compile(
-        rf"^##\s+{re.escape(section)}\s*$",
-        re.MULTILINE,
-    )
+    line_index: int,
+) -> int:
+    lines = markdown.splitlines(keepends=True)
 
-    match = pattern.search(markdown)
-
-    if match is None:
-        raise ValueError(f"Section not found for image insertion: {section}")
-
-    section_start = match.start()
-    heading_end = match.end()
-
-    next_heading = re.search(
-        r"^##\s+.+$",
-        markdown[heading_end:],
-        re.MULTILINE,
-    )
-
-    if next_heading is None:
-        section_end = len(markdown)
-    else:
-        section_end = heading_end + next_heading.start()
-
-    return section_start, heading_end, section_end
+    return sum(len(line) for line in lines[:line_index])
 
 
-def _insert_start(
-    section_text: str,
-    heading_end_offset: int,
+def _insert_at_line(
+    markdown: str,
+    *,
+    line_index: int,
     image_md: str,
 ) -> str:
-    relative = heading_end_offset
+    offset = _line_to_offset(
+        markdown,
+        line_index,
+    )
 
-    after_heading = section_text[:relative]
+    before = markdown[:offset].rstrip("\n")
 
-    remainder = section_text[relative:]
+    after = markdown[offset:].lstrip("\n")
 
-    return after_heading + "\n\n" + image_md + "\n" + remainder.lstrip("\n")
-
-
-def _insert_middle(
-    section_text: str,
-    heading_end_offset: int,
-    image_md: str,
-) -> str:
-    heading_part = section_text[:heading_end_offset]
-    body = section_text[heading_end_offset:]
-
-    body = body.lstrip("\n")
-
-    paragraphs = [
-        paragraph.strip() for paragraph in body.split("\n\n") if paragraph.strip()
+    parts = [
+        part
+        for part in (
+            before,
+            image_md,
+            after,
+        )
+        if part
     ]
 
-    if not paragraphs:
-        return heading_part + "\n\n" + image_md + "\n"
-
-    insert_at = 1
-
-    paragraphs.insert(
-        insert_at,
-        image_md,
-    )
-
-    return heading_part.rstrip() + "\n\n" + "\n\n".join(paragraphs) + "\n"
-
-
-def _insert_end(
-    section_text: str,
-    image_md: str,
-) -> str:
-    return section_text.rstrip() + "\n\n" + image_md + "\n"
+    return "\n\n".join(parts).rstrip() + "\n"
 
 
 def insert_image(
@@ -109,40 +76,38 @@ def insert_image(
     image: ImageSpec,
     image_path: str,
 ) -> str:
+    if image_path in get_image_sources(markdown):
+        raise ValueError(f"Image path already exists in Markdown: {image_path}")
+
     image_md = f"![{image.alt}]({image_path})\n*{image.caption}*"
 
-    section_start, heading_end, section_end = _find_section_bounds(
+    bounds = find_h2_section_bounds(
         markdown,
         section,
     )
 
-    section_text = markdown[section_start:section_end]
-
-    relative_heading_end = heading_end - section_start
-
     if image.placement == "start":
-        updated_section = _insert_start(
-            section_text,
-            relative_heading_end,
-            image_md,
-        )
+        insertion_line = bounds.heading_end_line
 
     elif image.placement == "middle":
-        updated_section = _insert_middle(
-            section_text,
-            relative_heading_end,
-            image_md,
+        insertion_line = find_first_body_block_end(
+            markdown,
+            start_line=(bounds.heading_end_line),
+            end_line=(bounds.section_end_line),
         )
 
     else:
-        updated_section = _insert_end(
-            section_text,
-            image_md,
-        )
+        insertion_line = bounds.section_end_line
 
-    result = markdown[:section_start] + updated_section + markdown[section_end:]
+    result = _insert_at_line(
+        markdown,
+        line_index=insertion_line,
+        image_md=image_md,
+    )
 
-    if result.count(image_path) != 1:
+    count = get_image_sources(result).count(image_path)
+
+    if count != 1:
         raise ValueError(f"Image insertion failed for {image_path}.")
 
     return result

@@ -1,28 +1,18 @@
-import re
 from pathlib import Path
 
-from services.markdown_validation import (
-    validate_article_markdown,
+from services.markdown_parser import (
+    get_image_sources,
 )
 
 
-IMAGE_PATTERN = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
-
-
-def validate_final_artifact(
+def validate_final_images(
     markdown: str,
     *,
-    expected_sections: list[str],
-    expected_title: str,
     image_results: list[dict],
 ) -> list[str]:
-    errors = validate_article_markdown(
-        markdown,
-        expected_title=expected_title,
-        expected_sections=expected_sections,
-    )
+    errors: list[str] = []
 
-    references = IMAGE_PATTERN.findall(markdown)
+    references = get_image_sources(markdown)
 
     expected_paths = {
         result["markdown_path"]
@@ -37,12 +27,7 @@ def validate_final_artifact(
             errors.append(f"Generated image is not embedded: {path}")
 
     for path in actual_paths:
-        if path.startswith(
-            (
-                "http://",
-                "https://",
-            )
-        ):
+        if path.startswith(("http://", "https://")):
             continue
 
         filesystem_path = (Path("generated_blogs") / path).resolve()
