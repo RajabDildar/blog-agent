@@ -15,13 +15,8 @@ from services.section_validation import validate_section_markdown
 
 def _validate_section(
     markdown: str,
-    *,
-    task: Task,
 ) -> list[str]:
-    return validate_section_markdown(
-        markdown,
-        expected_title=task.title,
-    )
+    return validate_section_markdown(markdown)
 
 
 def _repair_section(
@@ -111,7 +106,7 @@ def worker_node(payload: dict) -> dict:
         ]
     )
 
-    markdown = result.markdown.strip()
+    markdown = result.body_markdown.strip()
 
     if not markdown:
         raise ValueError(f"Worker returned empty Markdown for task {task.id}.")
@@ -119,7 +114,6 @@ def worker_node(payload: dict) -> dict:
     # First validation.
     errors = _validate_section(
         markdown,
-        task=task,
     )
 
     # One section-level recovery attempt.
@@ -133,7 +127,6 @@ def worker_node(payload: dict) -> dict:
         # Validate repaired output again.
         errors = _validate_section(
             markdown,
-            task=task,
         )
 
         if errors:
@@ -143,7 +136,7 @@ def worker_node(payload: dict) -> dict:
             )
 
     section = SectionOutput(
-        markdown=markdown,
+        body_markdown=markdown,
     )
 
     return {

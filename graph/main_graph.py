@@ -133,7 +133,7 @@ def route_after_editor(
                 "revision",
                 {
                     "task": task.model_dump(),
-                    "section": section.markdown,
+                    "section": section.body_markdown,
                     "issues": issue_map[task_id],
                 },
             )

@@ -1,9 +1,7 @@
 from schemas.state import State
 
 
-def merge_content(
-    state: State,
-) -> dict:
+def merge_content(state: State) -> dict:
     plan = state["plan"]
 
     if plan is None:
@@ -16,11 +14,17 @@ def merge_content(
     if missing:
         raise ValueError(f"Merge cannot continue. Missing sections: {missing}")
 
-    ordered_sections = [sections[task.id] for task in plan.tasks]
+    rendered_sections: list[str] = []
 
-    body = "\n\n".join(section.markdown.strip() for section in ordered_sections)
+    for task in plan.tasks:
+        body = sections[task.id].body_markdown.strip()
 
-    merged_md = f"# {plan.blog_title}\n\n{body}\n"
+        if not body:
+            raise ValueError(f"Merge: section {task.id} is empty.")
+
+        rendered_sections.append(f"## {task.title}\n\n{body}")
+
+    merged_md = f"# {plan.blog_title}\n\n" + "\n\n".join(rendered_sections) + "\n"
 
     return {
         "merged_md": merged_md,

@@ -3,59 +3,63 @@ from services.section_validation import (
 )
 
 
-def test_valid_section():
-    markdown = """## The State of the Agentic Stack
+def test_valid_section_body():
+    markdown = """Content here.
 
-Content here.
+### Useful Subsection
+
+More detail.
 """
 
-    errors = validate_section_markdown(
-        markdown,
-        expected_title="The State of the Agentic Stack",
-    )
-
-    assert errors == []
+    assert validate_section_markdown(markdown) == []
 
 
 def test_rejects_h1():
-    markdown = """# The State of the Agentic Stack
+    errors = validate_section_markdown("# Wrong\n\nContent.")
 
-Content here.
-"""
-
-    errors = validate_section_markdown(
-        markdown,
-        expected_title="The State of the Agentic Stack",
-    )
-
-    assert "Section heading must be H2." in errors
+    assert any("cannot contain H1" in error for error in errors)
 
 
-def test_rejects_multiple_headings():
-    markdown = """## The State of the Agentic Stack
+def test_rejects_h2():
+    errors = validate_section_markdown("## Wrong\n\nContent.")
 
-Content.
-
-### Another heading
-"""
-
-    errors = validate_section_markdown(
-        markdown,
-        expected_title="The State of the Agentic Stack",
-    )
-
-    assert any("exactly one heading" in error for error in errors)
+    assert any("cannot contain H2" in error for error in errors)
 
 
-def test_rejects_wrong_title():
-    markdown = """## Wrong Heading
+def test_allows_h3_and_h4():
+    markdown = """Intro.
+
+### Request Headers
 
 Content.
+
+#### Example
+
+More content.
 """
 
-    errors = validate_section_markdown(
-        markdown,
-        expected_title="The State of the Agentic Stack",
-    )
+    assert validate_section_markdown(markdown) == []
 
-    assert any("Expected heading" in error for error in errors)
+
+def test_heading_like_code_does_not_fail():
+    markdown = """Example:
+
+```python
+# comment
+## another comment
+```
+"""
+
+    assert validate_section_markdown(markdown) == []
+
+
+def test_rejects_unclosed_fence():
+    markdown = """Example:
+
+```python
+print("hello")
+"""
+
+    errors = validate_section_markdown(markdown)
+
+    assert any("unclosed code fence" in error.lower() for error in errors)

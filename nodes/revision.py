@@ -12,13 +12,8 @@ from prompts.writer_repair import WRITER_REPAIR_SYSTEM
 
 def _validate_section(
     markdown: str,
-    *,
-    task: Task,
 ) -> list[str]:
-    return validate_section_markdown(
-        markdown,
-        expected_title=task.title,
-    )
+    return validate_section_markdown(markdown)
 
 
 def _repair_section(
@@ -76,14 +71,13 @@ def revision_node(payload: dict) -> dict:
             ]
         )
 
-        markdown = result.markdown.strip()
+        markdown = result.body_markdown.strip()
 
         if not markdown:
             raise ValueError(f"Revision returned empty Markdown for task {task.id}.")
 
         errors = _validate_section(
             markdown,
-            task=task,
         )
 
         # One section-level recovery attempt.
@@ -97,7 +91,6 @@ def revision_node(payload: dict) -> dict:
             # Validate repaired output again.
             errors = _validate_section(
                 markdown,
-                task=task,
             )
 
             if errors:
@@ -107,7 +100,7 @@ def revision_node(payload: dict) -> dict:
                 )
 
         section = SectionOutput(
-            markdown=markdown,
+            body_markdown=markdown,
         )
 
     except Exception as exc:

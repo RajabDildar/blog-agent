@@ -110,7 +110,7 @@ class RouterDecision(BaseModel):
 
 
 class SectionOutput(BaseModel):
-    markdown: str
+    body_markdown: str
 
 
 class EditorialIssue(BaseModel):
