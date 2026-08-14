@@ -13,10 +13,12 @@ def validate_final_artifact(
     markdown: str,
     *,
     expected_sections: list[str],
+    expected_title: str,
     image_results: list[dict],
 ) -> list[str]:
     errors = validate_article_markdown(
         markdown,
+        expected_title=expected_title,
         expected_sections=expected_sections,
     )
 

@@ -1,16 +1,22 @@
-import re
 from collections.abc import Sequence
 
-
-HEADING_PATTERN = re.compile(
-    r"^(#{1,6})\s+(.+?)\s*$",
-    re.MULTILINE,
+from services.markdown_parser import (
+    find_unclosed_fence,
+    get_headings,
 )
+
+
+FORBIDDEN_MARKERS = {
+    "[[IMAGE_": "Unresolved image placeholder.",
+    "IMAGE GENERATION FAILED": "Image failure text leaked into output.",
+    "Not found in provided sources.": "Unsupported claim marker leaked into output.",
+}
 
 
 def validate_article_markdown(
     markdown: str,
     *,
+    expected_title: str,
     expected_sections: Sequence[str],
 ) -> list[str]:
     errors: list[str] = []
@@ -18,58 +24,62 @@ def validate_article_markdown(
     if not markdown.strip():
         return ["Article Markdown is empty."]
 
-    headings = HEADING_PATTERN.findall(markdown)
+    headings = get_headings(markdown)
 
-    h1s = [title.strip() for level, title in headings if level == "#"]
+    h1s = [heading for heading in headings if heading.level == 1]
 
     if len(h1s) != 1:
         errors.append(f"Expected exactly one H1, found {len(h1s)}.")
 
-    if h1s and not markdown.startswith(f"# {h1s[0]}"):
-        errors.append("Document must begin with its H1 title.")
+    elif h1s[0].text != expected_title.strip():
+        errors.append(f"Expected H1 '# {expected_title}', got '# {h1s[0].text}'.")
 
-    for level, title in headings:
-        if len(level) > 2:
-            errors.append(f"Invalid heading level found: {level} {title}")
-
-    actual_h2s = [title.strip() for level, title in headings if level == "##"]
-
-    if not actual_h2s:
-        errors.append("No H2 sections found.")
-
-    expected = list(expected_sections)
-
-    if actual_h2s != expected:
-        errors.append("Article sections do not match the planned section order.")
-
-        # Give useful detail.
-        for index, expected_title in enumerate(expected):
-            actual_title = actual_h2s[index] if index < len(actual_h2s) else None
-
-            if actual_title != expected_title:
-                errors.append(
-                    f"Section {index + 1}: expected "
-                    f"'{expected_title}', got "
-                    f"'{actual_title}'."
-                )
-
-    code_fences = re.findall(
-        r"```",
-        markdown,
+    first_nonempty_line = next(
+        (line.strip() for line in markdown.splitlines() if line.strip()),
+        "",
     )
 
-    if len(code_fences) % 2 != 0:
-        errors.append("Unclosed Markdown code fence.")
+    expected_h1 = f"# {expected_title.strip()}"
 
-    forbidden_markers = {
-        "[[IMAGE_": ("Unresolved image placeholder."),
-        "IMAGE GENERATION FAILED": ("Image failure text leaked into output."),
-        "Not found in provided sources.": (
-            "Unsupported claim marker leaked into output."
-        ),
-    }
+    if first_nonempty_line != expected_h1:
+        errors.append("Document must begin with the planned H1 title.")
 
-    for marker, error in forbidden_markers.items():
+    actual_h2s = [heading.text for heading in headings if heading.level == 2]
+
+    expected_h2s = [section.strip() for section in expected_sections]
+
+    if actual_h2s != expected_h2s:
+        errors.append("Article sections do not match the planned section order.")
+
+        max_length = max(
+            len(actual_h2s),
+            len(expected_h2s),
+        )
+
+        for index in range(max_length):
+            expected_at_index = (
+                expected_h2s[index] if index < len(expected_h2s) else None
+            )
+
+            actual_at_index = actual_h2s[index] if index < len(actual_h2s) else None
+
+            if actual_at_index != expected_at_index:
+                errors.append(
+                    f"Section {index + 1}: "
+                    f"expected "
+                    f"'{expected_at_index}', "
+                    f"got "
+                    f"'{actual_at_index}'."
+                )
+
+    unclosed_fence_line = find_unclosed_fence(markdown)
+
+    if unclosed_fence_line is not None:
+        errors.append(
+            f"Unclosed Markdown code fence starting on line {unclosed_fence_line}."
+        )
+
+    for marker, error in FORBIDDEN_MARKERS.items():
         if marker in markdown:
             errors.append(error)
 

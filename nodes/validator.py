@@ -17,6 +17,7 @@ def validator_node(
     errors = validate_final_artifact(
         state["final"],
         expected_sections=expected_sections,
+        expected_title=plan.blog_title,
         image_results=state.get(
             "image_results",
             [],

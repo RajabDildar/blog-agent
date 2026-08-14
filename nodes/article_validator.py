@@ -16,6 +16,7 @@ def article_validator_node(
 
     errors = validate_article_markdown(
         state["merged_md"],
+        expected_title=plan.blog_title,
         expected_sections=expected_sections,
     )
 
