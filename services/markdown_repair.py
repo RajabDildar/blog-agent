@@ -1,38 +1,97 @@
 import re
 
-
-HEADING_PATTERN = re.compile(
-    r"^(#{1,6})\s+(.+?)\s*$",
-    re.MULTILINE,
+from services.markdown_format import (
+    normalize_markdown,
+)
+from services.markdown_parser import (
+    get_headings,
 )
 
 
-def repair_heading_structure(
+ATX_HEADING_RE = re.compile(
+    r"^(?P<indent> {0,3})"
+    r"(?P<marker>#{1,6})"
+    r"[ \t]+"
+    r"(?P<title>.*?)"
+    r"[ \t]*#*[ \t]*$"
+)
+
+
+def strip_outer_markdown_fence(
     markdown: str,
 ) -> str:
-    headings = list(HEADING_PATTERN.finditer(markdown))
+    lines = markdown.splitlines()
 
-    if not headings:
+    if len(lines) < 2:
         return markdown
 
-    parts: list[str] = []
+    first = lines[0].strip().lower()
+    last = lines[-1].strip()
 
-    cursor = 0
+    opening_to_closing = {
+        "```markdown": "```",
+        "```md": "```",
+        "~~~markdown": "~~~",
+        "~~~md": "~~~",
+    }
 
-    for index, match in enumerate(headings):
-        parts.append(markdown[cursor : match.start()])
+    expected_closing = opening_to_closing.get(first)
 
-        title = match.group(2).strip()
+    if expected_closing is None or last != expected_closing:
+        return markdown
 
-        if index == 0:
-            new_heading = f"# {title}"
-        else:
-            new_heading = f"## {title}"
+    return normalize_markdown("\n".join(lines[1:-1]))
 
-        parts.append(new_heading)
 
-        cursor = match.end()
+def repair_section_structure(
+    markdown: str,
+    *,
+    expected_title: str,
+) -> str:
+    repaired = strip_outer_markdown_fence(markdown)
 
-    parts.append(markdown[cursor:])
+    lines = repaired.splitlines()
+    headings = get_headings(repaired)
 
-    return "".join(parts)
+    first_nonempty_index = next(
+        (index for index, line in enumerate(lines) if line.strip()),
+        None,
+    )
+
+    for heading in headings:
+        if heading.level > 2:
+            continue
+
+        line_index = heading.line - 1
+
+        if line_index < 0 or line_index >= len(lines):
+            continue
+
+        match = ATX_HEADING_RE.match(lines[line_index])
+
+        # Leave unusual/setext cases for LLM repair.
+        if match is None:
+            continue
+
+        is_duplicated_section_heading = (
+            line_index == first_nonempty_index
+            and heading.text.strip() == expected_title.strip()
+        )
+
+        if is_duplicated_section_heading:
+            lines[line_index] = ""
+            continue
+
+        # Any other H1/H2 inside a section body
+        # becomes a subsection.
+        lines[line_index] = f"{match.group('indent')}### {heading.text.strip()}"
+
+    return normalize_markdown("\n".join(lines))
+
+
+def repair_article_structure(
+    markdown: str,
+) -> str:
+    # Article H1/H2 are application-owned.
+    # Do not guess their intended structure here.
+    return strip_outer_markdown_fence(markdown)

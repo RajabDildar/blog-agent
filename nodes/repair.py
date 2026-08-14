@@ -1,17 +1,11 @@
-from langchain_core.messages import (
-    HumanMessage,
-    SystemMessage,
-)
-
-from prompts.repair import REPAIR_SYSTEM
-from schemas.models import (
-    MarkdownRepairOutput,
-    Plan,
-)
+from schemas.models import Plan
 from schemas.state import State
 from services.llm import revision_llm
-from services.markdown_repair import (
-    repair_heading_structure,
+from services.markdown_llm_repair import (
+    repair_markdown_with_llm,
+)
+from services.markdown_quality import (
+    run_markdown_quality_gate,
 )
 
 
@@ -23,64 +17,26 @@ def repair_node(
     if plan is None:
         raise ValueError("Repair: plan is missing.")
 
-    errors = state.get(
-        "article_validation_errors",
-        [],
+    expected_sections = [task.title for task in plan.tasks]
+
+    gate = run_markdown_quality_gate(
+        state["merged_md"],
+        profile="article",
+        expected_title=plan.blog_title,
+        expected_sections=expected_sections,
+        llm_repair=lambda current, errors: repair_markdown_with_llm(
+            llm=revision_llm,
+            markdown=current,
+            errors=errors,
+            scope="article",
+            expected_title=(plan.blog_title),
+            expected_sections=(expected_sections),
+        ),
     )
-
-    if not errors:
-        return {"article_repair_count": (state["article_repair_count"])}
-
-    markdown = state["merged_md"]
-
-    # 1. Deterministic repair
-
-    has_heading_error = any(
-        (
-            "exactly one H1" in error
-            or "Invalid heading level" in error
-            or "Section" in error
-        )
-        for error in errors
-    )
-
-    if has_heading_error:
-        repaired_markdown = repair_heading_structure(markdown)
-
-        if repaired_markdown != markdown:
-            return {
-                "merged_md": repaired_markdown,
-                "article_repair_count": (state["article_repair_count"] + 1),
-            }
-
-    # 2. LLM repair for remaining problems
-
-    try:
-        repairer = revision_llm.with_structured_output(MarkdownRepairOutput)
-
-        result = repairer.invoke(
-            [
-                SystemMessage(content=REPAIR_SYSTEM),
-                HumanMessage(
-                    content=(
-                        f"Article plan:\n"
-                        f"{plan.model_dump()}\n\n"
-                        f"Validation errors:\n"
-                        f"{errors}\n\n"
-                        f"Current Markdown:\n"
-                        f"{markdown}"
-                    )
-                ),
-            ]
-        )
-
-    except Exception as exc:
-        raise RuntimeError(f"Markdown repair failed: {exc}") from exc
-
-    if not result.markdown.strip():
-        raise ValueError("Repair returned empty Markdown.")
 
     return {
-        "merged_md": result.markdown,
-        "article_repair_count": (state["article_repair_count"] + 1),
+        "merged_md": gate.markdown,
+        "article_validation_errors": gate.errors,
+        "article_validation_passed": not gate.errors,
+        "article_repair_count": state["article_repair_count"] + 1,
     }

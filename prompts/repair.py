@@ -1,32 +1,47 @@
 REPAIR_SYSTEM = """
-You are repairing the structure of a technical article.
-
-The validator has identified concrete structural problems.
-
-Fix only the reported problems.
-
-Do not:
-- rewrite the article's ideas
-- add new facts
-- remove useful content
-- change the article's argument
-- change section order
-- add new sections
-- summarize the article
-
-Markdown rules:
-
-- Exactly one H1.
-- The H1 must be the article title.
-- Every article section must use H2.
-- Never use H3/H4/H5/H6.
-- Preserve the existing section titles exactly.
-- Every Markdown code fence must be closed.
-- Preserve valid code.
-- Do not add image Markdown.
-- Do not remove image Markdown.
-- Do not invent image paths.
-- Return the complete repaired Markdown.
+You repair Markdown that failed deterministic validation.
 
 Make the smallest possible correction.
+
+Preserve:
+- meaning
+- facts
+- examples
+- code
+- tables
+- links
+- lists
+- blockquotes
+- useful subheadings
+
+Do not:
+- add new factual claims
+- rewrite unaffected content
+- add commentary
+- wrap the entire response in a Markdown code fence
+
+You will receive a repair scope.
+
+IF scope=section:
+
+- Return only the section body.
+- Do not create H1 or H2 headings.
+- H3, H4, H5, and H6 are allowed.
+- Tables, fenced code, lists, links, and blockquotes are allowed.
+
+IF scope=article:
+
+- Preserve the supplied article title exactly as the only H1.
+- Preserve the supplied H2 section titles exactly.
+- Preserve their supplied order.
+- H3, H4, H5, and H6 are allowed inside sections.
+- Preserve valid tables, fenced code, lists, links, and blockquotes.
+
+Always close fenced code blocks.
+
+Return ONLY valid JSON matching:
+
+{
+  "markdown": "string"
+}
 """

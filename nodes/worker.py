@@ -1,54 +1,20 @@
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from prompts.writer_repair import WRITER_REPAIR_SYSTEM
 from prompts.writer import WORKER_SYSTEM
 from schemas.models import (
-    MarkdownRepairOutput,
     Plan,
     ResearchEvidence,
     SectionOutput,
     Task,
 )
 from services.llm import writer_llm
-from services.section_validation import validate_section_markdown
 
-
-def _validate_section(
-    markdown: str,
-) -> list[str]:
-    return validate_section_markdown(markdown)
-
-
-def _repair_section(
-    *,
-    task: Task,
-    markdown: str,
-    errors: list[str],
-) -> str:
-    repairer = writer_llm.with_structured_output(MarkdownRepairOutput)
-
-    result = repairer.invoke(
-        [
-            SystemMessage(content=WRITER_REPAIR_SYSTEM),
-            HumanMessage(
-                content=(
-                    f"Task title:\n"
-                    f"{task.title}\n\n"
-                    f"Task goal:\n"
-                    f"{task.goal}\n\n"
-                    f"Validation errors:\n"
-                    f"{errors}\n\n"
-                    f"Current Markdown:\n"
-                    f"{markdown}"
-                )
-            ),
-        ]
-    )
-
-    if not result.markdown.strip():
-        raise ValueError(f"Worker repair returned empty Markdown for task {task.id}.")
-
-    return result.markdown
+from services.markdown_llm_repair import (
+    repair_markdown_with_llm,
+)
+from services.markdown_quality import (
+    run_markdown_quality_gate,
+)
 
 
 def worker_node(payload: dict) -> dict:
@@ -108,35 +74,27 @@ def worker_node(payload: dict) -> dict:
 
     markdown = result.body_markdown.strip()
 
-    if not markdown:
-        raise ValueError(f"Worker returned empty Markdown for task {task.id}.")
-
-    # First validation.
-    errors = _validate_section(
+    gate = run_markdown_quality_gate(
         markdown,
+        profile="section",
+        expected_title=task.title,
+        llm_repair=lambda current, errors: repair_markdown_with_llm(
+            llm=writer_llm,
+            markdown=current,
+            errors=errors,
+            scope="section",
+            expected_title=task.title,
+        ),
     )
 
-    # One section-level recovery attempt.
-    if errors:
-        markdown = _repair_section(
-            task=task,
-            markdown=markdown,
-            errors=errors,
-        ).strip()
-
-        # Validate repaired output again.
-        errors = _validate_section(
-            markdown,
+    if gate.errors:
+        raise ValueError(
+            f"Worker produced invalid "
+            f"section {task.id}:\n" + "\n".join(f"- {error}" for error in gate.errors)
         )
 
-        if errors:
-            raise ValueError(
-                f"Worker produced invalid section {task.id} "
-                f"after repair:\n" + "\n".join(f"- {error}" for error in errors)
-            )
-
     section = SectionOutput(
-        body_markdown=markdown,
+        body_markdown=gate.markdown,
     )
 
     return {

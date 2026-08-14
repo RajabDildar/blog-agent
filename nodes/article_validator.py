@@ -1,6 +1,6 @@
 from schemas.state import State
-from services.markdown_validation import (
-    validate_article_markdown,
+from services.markdown_quality import (
+    run_markdown_quality_gate,
 )
 
 
@@ -14,13 +14,15 @@ def article_validator_node(
 
     expected_sections = [task.title for task in plan.tasks]
 
-    errors = validate_article_markdown(
+    gate = run_markdown_quality_gate(
         state["merged_md"],
+        profile="article",
         expected_title=plan.blog_title,
         expected_sections=expected_sections,
     )
 
     return {
-        "article_validation_errors": errors,
-        "article_validation_passed": not errors,
+        "merged_md": gate.markdown,
+        "article_validation_errors": gate.errors,
+        "article_validation_passed": not gate.errors,
     }
