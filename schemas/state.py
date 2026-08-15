@@ -10,6 +10,7 @@ from schemas.models import (
 
 
 class State(TypedDict):
+    run_id: str
     topic: str
 
     mode: str

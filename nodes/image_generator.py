@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from schemas.models import ImageSpec
 from schemas.state import State
 from services.cloudflare import (
@@ -7,6 +5,11 @@ from services.cloudflare import (
 )
 from services.image_prompt import build_image_prompt
 from services.markdown import insert_image
+from services.run_paths import (
+    markdown_image_path,
+    published_image_path,
+    staged_image_path,
+)
 
 
 def generate_images_node(state: State) -> dict:
@@ -15,14 +18,12 @@ def generate_images_node(state: State) -> dict:
     if plan is None:
         raise ValueError("Image generator: plan is missing.")
 
+    run_id = state["run_id"]
+
+    if not run_id:
+        raise ValueError("Image generator: run_id is missing.")
+
     markdown = state["merged_md"]
-
-    images_dir = Path("images")
-
-    images_dir.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
 
     image_results: list[dict] = []
 
@@ -44,9 +45,27 @@ def generate_images_node(state: State) -> dict:
 
         filename = raw_spec["filename"]
 
-        output_path = images_dir / filename
+        staged_path = staged_image_path(
+            run_id=run_id,
+            filename=filename,
+        )
 
-        markdown_path = f"../images/{filename}"
+        published_path = published_image_path(
+            title=plan.blog_title,
+            run_id=run_id,
+            filename=filename,
+        )
+
+        markdown_path = markdown_image_path(
+            title=plan.blog_title,
+            run_id=run_id,
+            filename=filename,
+        )
+
+        staged_path.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
 
         prompt = build_image_prompt(
             purpose=spec.purpose,
@@ -56,19 +75,20 @@ def generate_images_node(state: State) -> dict:
             image_type=spec.image_type,
         )
 
-        if not output_path.exists():
-            try:
-                image_bytes = cloudflare_generate_image_bytes(prompt)
+        try:
+            image_bytes = cloudflare_generate_image_bytes(prompt)
 
-                if not image_bytes:
-                    raise RuntimeError("Cloudflare returned empty image bytes.")
+            if not image_bytes:
+                raise RuntimeError("Cloudflare returned empty image bytes.")
 
-                output_path.write_bytes(image_bytes)
+            # Always generate this run's own staged file.
+            # Never reuse an image from a previous run.
+            staged_path.write_bytes(image_bytes)
 
-            except Exception as exc:
-                raise RuntimeError(
-                    f"Image generation failed for {spec.id} ({filename}): {exc}"
-                ) from exc
+        except Exception as exc:
+            raise RuntimeError(
+                f"Image generation failed for {spec.id} ({filename}): {exc}"
+            ) from exc
 
         try:
             markdown = insert_image(
@@ -77,6 +97,7 @@ def generate_images_node(state: State) -> dict:
                 image=spec,
                 image_path=markdown_path,
             )
+
         except Exception as exc:
             raise RuntimeError(
                 f"Image insertion failed for {spec.id} in section '{task.title}': {exc}"
@@ -87,6 +108,8 @@ def generate_images_node(state: State) -> dict:
                 "id": spec.id,
                 "filename": filename,
                 "markdown_path": markdown_path,
+                "staged_path": str(staged_path),
+                "published_path": str(published_path),
                 "section_id": spec.section_id,
                 "status": "inserted",
             }

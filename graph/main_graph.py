@@ -1,4 +1,5 @@
 from typing import Literal
+from uuid import uuid4
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
@@ -400,8 +401,11 @@ app = build_graph()
 
 
 def run(topic: str):
+    run_id = uuid4().hex
+
     return app.invoke(
         {
+            "run_id": run_id,
             "topic": topic,
             "mode": "",
             "needs_research": False,
