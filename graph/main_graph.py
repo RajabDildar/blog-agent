@@ -5,7 +5,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
 from config.settings import (
-    groq_retry_policy,
+    provider_retry_policy,
     MAX_EDITORIAL_REVISIONS,
     MAX_ARTICLE_REPAIRS,
 )
@@ -209,22 +209,25 @@ def build_graph():
     builder.add_node(
         "router",
         router_node,
+        retry_policy=provider_retry_policy,
     )
 
     builder.add_node(
         "research",
         research_node,
+        retry_policy=provider_retry_policy,
     )
 
     builder.add_node(
         "orchestrator",
         orchestrator_node,
+        retry_policy=provider_retry_policy,
     )
 
     builder.add_node(
         "worker",
         worker_node,
-        retry_policy=groq_retry_policy,
+        retry_policy=provider_retry_policy,
     )
 
     builder.add_node(
@@ -235,12 +238,13 @@ def build_graph():
     builder.add_node(
         "editor",
         editor_node,
+        retry_policy=provider_retry_policy,
     )
 
     builder.add_node(
         "revision",
         revision_node,
-        retry_policy=groq_retry_policy,
+        retry_policy=provider_retry_policy,
     )
 
     builder.add_node(
@@ -256,7 +260,7 @@ def build_graph():
     builder.add_node(
         "repair",
         repair_node,
-        retry_policy=groq_retry_policy,
+        retry_policy=provider_retry_policy,
     )
 
     builder.add_node(
@@ -267,6 +271,7 @@ def build_graph():
     builder.add_node(
         "image_planner",
         image_planner_node,
+        retry_policy=provider_retry_policy,
     )
 
     builder.add_node(

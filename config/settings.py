@@ -1,4 +1,5 @@
 import os
+from collections.abc import Callable
 
 import groq
 from dotenv import load_dotenv
@@ -15,13 +16,56 @@ rate_limiter = InMemoryRateLimiter(
 )
 
 
-groq_retry_policy = RetryPolicy(
-    max_attempts=6,
-    initial_interval=3.0,
+TRANSIENT_HTTP_STATUS_CODES = {
+    429,
+    500,
+    502,
+    503,
+    504,
+}
+
+
+def is_transient_provider_error(
+    exc: Exception,
+) -> bool:
+    """Return True only for provider failures worth retrying."""
+
+    if isinstance(
+        exc,
+        (
+            groq.RateLimitError,
+            groq.APIConnectionError,
+            groq.APITimeoutError,
+            groq.InternalServerError,
+        ),
+    ):
+        return True
+
+    if isinstance(
+        exc,
+        (
+            ConnectionError,
+            TimeoutError,
+        ),
+    ):
+        return True
+
+    status_code = getattr(
+        exc,
+        "status_code",
+        None,
+    )
+
+    return status_code in TRANSIENT_HTTP_STATUS_CODES
+
+
+provider_retry_policy = RetryPolicy(
+    max_attempts=4,
+    initial_interval=2.0,
     backoff_factor=2.0,
-    max_interval=30.0,
+    max_interval=20.0,
     jitter=True,
-    retry_on=[groq.RateLimitError],
+    retry_on=is_transient_provider_error,
 )
 
 

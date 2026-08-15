@@ -1,31 +1,35 @@
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import (
+    HumanMessage,
+    SystemMessage,
+)
 
 from schemas.models import RouterDecision
 from schemas.state import State
 from services.llm import gemini_llm
 from prompts.router import ROUTER_SYSTEM
-from services.time import current_date, current_year
+from services.time import (
+    current_date,
+    current_year,
+)
 
 
-def router_node(state: State) -> dict:
-    try:
-        decider = gemini_llm.with_structured_output(RouterDecision)
+def router_node(
+    state: State,
+) -> dict:
+    decider = gemini_llm.with_structured_output(RouterDecision)
 
-        decision = decider.invoke(
-            [
-                SystemMessage(content=ROUTER_SYSTEM),
-                HumanMessage(
-                    content=(
-                        f"Current date: {current_date()}\n"
-                        f"Current year: {current_year()}\n\n"
-                        f"Topic:\n{state['topic']}"
-                    )
-                ),
-            ]
-        )
-
-    except Exception as exc:
-        raise RuntimeError(f"Router failed: {exc}") from exc
+    decision = decider.invoke(
+        [
+            SystemMessage(content=ROUTER_SYSTEM),
+            HumanMessage(
+                content=(
+                    f"Current date: {current_date()}\n"
+                    f"Current year: {current_year()}\n\n"
+                    f"Topic:\n{state['topic']}"
+                )
+            ),
+        ]
+    )
 
     return {
         "needs_research": decision.needs_research,
@@ -35,7 +39,9 @@ def router_node(state: State) -> dict:
     }
 
 
-def route_next(state: State) -> str:
+def route_next(
+    state: State,
+) -> str:
     if state["needs_research"]:
         return "research"
 
