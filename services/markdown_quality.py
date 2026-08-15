@@ -142,16 +142,7 @@ def run_markdown_quality_gate(
         )
 
     # 3. Canonical formatting
-    try:
-        formatted = format_markdown(current)
-
-    except Exception as exc:
-        return MarkdownGateResult(
-            markdown=current,
-            errors=[f"Markdown formatting failed: {exc}"],
-            deterministic_repair_applied=(deterministic_applied),
-            llm_repair_applied=llm_applied,
-        )
+    formatted = format_markdown(current)
 
     # 4. Never trust a transformation blindly.
     final_errors = _validate(
