@@ -44,6 +44,44 @@ def test_get_headings_returns_empty_list_when_no_headings():
     assert get_headings(markdown) == []
 
 
+def test_get_headings_ignores_heading_syntax_inside_backtick_fence():
+    markdown = """# Real Title
+
+```python
+# Python comment
+## Still a Python comment
+```
+
+## Real Section
+"""
+
+    headings = get_headings(markdown)
+
+    assert [(heading.level, heading.text) for heading in headings] == [
+        (1, "Real Title"),
+        (2, "Real Section"),
+    ]
+
+
+def test_get_headings_ignores_heading_syntax_inside_tilde_fence():
+    markdown = """# Real Title
+
+~~~bash
+# shell comment
+## not a Markdown section
+~~~
+
+## Real Section
+"""
+
+    headings = get_headings(markdown)
+
+    assert [(heading.level, heading.text) for heading in headings] == [
+        (1, "Real Title"),
+        (2, "Real Section"),
+    ]
+
+
 def test_get_image_sources_returns_image_urls():
     markdown = """# Blog
 
@@ -66,6 +104,33 @@ def test_get_image_sources_returns_empty_list_when_no_images():
     assert get_image_sources(markdown) == []
 
 
+def test_get_image_sources_ignores_image_syntax_inside_code():
+    markdown = """# Blog
+
+```markdown
+![not-an-article-image](../images/example.png)
+```
+
+![real image](../images/real.png)
+"""
+
+    assert get_image_sources(markdown) == [
+        "../images/real.png",
+    ]
+
+
+def test_get_image_sources_preserves_duplicate_references():
+    markdown = """![first](../images/shared.png)
+
+![second](../images/shared.png)
+"""
+
+    assert get_image_sources(markdown) == [
+        "../images/shared.png",
+        "../images/shared.png",
+    ]
+
+
 def test_has_gfm_table_returns_true_for_table():
     markdown = """| Name | Age |
 | --- | ---: |
@@ -79,6 +144,17 @@ def test_has_gfm_table_returns_false_for_non_table():
     markdown = """# Heading
 
 This is a paragraph.
+"""
+
+    assert has_gfm_table(markdown) is False
+
+
+def test_has_gfm_table_ignores_table_like_text_inside_code():
+    markdown = """```markdown
+| Name | Age |
+| --- | --- |
+| Ada | 36 |
+```
 """
 
     assert has_gfm_table(markdown) is False
@@ -190,7 +266,6 @@ def test_find_unclosed_fence_handles_multiple_fences():
     markdown = """```python
 print("first")
 ```
-
 ~~~javascript
 console.log("second")
 ~~~
