@@ -10,6 +10,39 @@ MODEL = os.getenv(
     "@cf/black-forest-labs/flux-1-schnell",
 )
 
+TRANSIENT_HTTP_STATUS_CODES = {
+    408,
+    429,
+}
+
+
+def _is_transient_cloudflare_error(
+    exc: Exception,
+) -> bool:
+    if isinstance(
+        exc,
+        (
+            requests.Timeout,
+            requests.ConnectionError,
+        ),
+    ):
+        return True
+
+    if isinstance(
+        exc,
+        requests.HTTPError,
+    ):
+        response = exc.response
+
+        if response is None:
+            return False
+
+        status_code = response.status_code
+
+        return status_code in TRANSIENT_HTTP_STATUS_CODES or 500 <= status_code <= 599
+
+    return False
+
 
 def cloudflare_generate_image_bytes(
     prompt: str,
@@ -29,8 +62,14 @@ def cloudflare_generate_image_bytes(
     url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run/{MODEL}"
 
     last_error: Exception | None = None
+    attempts = 0
 
-    for attempt in range(1, max_attempts + 1):
+    for attempt in range(
+        1,
+        max_attempts + 1,
+    ):
+        attempts = attempt
+
         try:
             response = requests.post(
                 url,
@@ -71,10 +110,11 @@ def cloudflare_generate_image_bytes(
         except Exception as exc:
             last_error = exc
 
-            if attempt < max_attempts:
-                time.sleep(2 * attempt)
+            if attempt >= max_attempts or not _is_transient_cloudflare_error(exc):
+                break
+
+            time.sleep(2 * attempt)
 
     raise RuntimeError(
-        f"Cloudflare image generation failed after "
-        f"{max_attempts} attempts: {last_error}"
+        f"Cloudflare image generation failed after {attempts} attempts: {last_error}"
     )
