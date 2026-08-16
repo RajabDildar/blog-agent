@@ -16,6 +16,9 @@ from services.markdown_llm_repair import (
 from services.markdown_quality import (
     run_markdown_quality_gate,
 )
+from services.run_diagnostics import (
+    get_current_diagnostics,
+)
 
 
 def revision_node(
@@ -46,6 +49,8 @@ def revision_node(
 
     markdown = result.body_markdown.strip()
 
+    diagnostics = get_current_diagnostics()
+
     gate = run_markdown_quality_gate(
         markdown,
         profile="section",
@@ -56,6 +61,7 @@ def revision_node(
             errors=errors,
             scope="section",
             expected_title=task.title,
+            diagnostics=diagnostics,
         ),
     )
 

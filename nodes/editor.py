@@ -10,6 +10,9 @@ from schemas.models import (
 from schemas.state import State
 from services.llm import gemini_llm
 from prompts.editor import EDITOR_SYSTEM
+from services.run_diagnostics import (
+    get_current_diagnostics,
+)
 
 
 def editor_node(
@@ -51,6 +54,11 @@ def editor_node(
     )
 
     review.approved = approved
+
+    diagnostics = get_current_diagnostics()
+
+    if diagnostics is not None:
+        diagnostics.record_editorial_review()
 
     return {
         "editorial_review": review,

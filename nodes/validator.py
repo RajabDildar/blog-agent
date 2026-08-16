@@ -5,6 +5,9 @@ from services.final_validation import (
 from services.markdown_quality import (
     run_markdown_quality_gate,
 )
+from services.run_diagnostics import (
+    get_current_diagnostics,
+)
 
 
 def validator_node(
@@ -37,6 +40,12 @@ def validator_node(
                 ),
             )
         )
+
+    if errors:
+        diagnostics = get_current_diagnostics()
+
+        if diagnostics is not None:
+            diagnostics.record_final_validation(errors)
 
     return {
         "final": gate.markdown,

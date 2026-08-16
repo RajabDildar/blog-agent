@@ -1,0 +1,335 @@
+import json
+import threading
+import time
+from collections import defaultdict
+from pathlib import Path
+from typing import Any
+from collections.abc import Callable
+from langgraph.runtime import get_runtime
+
+
+class RunDiagnostics:
+    def __init__(
+        self,
+        *,
+        run_id: str,
+        topic: str,
+    ):
+        self.run_id = run_id
+        self.topic = topic
+        self.started_at = time.time()
+
+        self.status = "running"
+
+        self.current_stage = ""
+        self.current_provider: str | None = None
+
+        self.retry_count = 0
+
+        self.provider_attempts: dict[str, int] = defaultdict(int)
+
+        self.markdown_deterministic_repairs = 0
+        self.markdown_llm_repairs = 0
+
+        self.editorial_reviews = 0
+        self.editorial_revisions = 0
+
+        self.image_attempts = 0
+        self.image_ids: list[str] = []
+
+        self.final_validation_failures = 0
+
+        self.failure: dict[str, Any] | None = None
+
+        self.events: list[dict[str, Any]] = []
+
+        self._lock = threading.Lock()
+
+    @property
+    def path(self) -> Path:
+        return Path("runs") / self.run_id / "diagnostics.json"
+
+    def _snapshot(self) -> dict[str, Any]:
+        return {
+            "run_id": self.run_id,
+            "topic": self.topic,
+            "status": self.status,
+            "started_at": self.started_at,
+            "finished_at": (time.time() if self.status != "running" else None),
+            "duration_seconds": round(
+                time.time() - self.started_at,
+                2,
+            ),
+            "current_stage": self.current_stage,
+            "current_provider": self.current_provider,
+            "retry_count": self.retry_count,
+            "provider_attempts": dict(self.provider_attempts),
+            "markdown": {
+                "deterministic_repairs": (self.markdown_deterministic_repairs),
+                "llm_repairs": (self.markdown_llm_repairs),
+            },
+            "editorial_reviews": (self.editorial_reviews),
+            "editorial_revisions": (self.editorial_revisions),
+            "image_attempts": (self.image_attempts),
+            "image_ids": list(self.image_ids),
+            "final_validation_failures": (self.final_validation_failures),
+            "failure": self.failure,
+            "events": list(self.events),
+        }
+
+    def _write(self) -> None:
+        path = self.path
+
+        path.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        path.write_text(
+            json.dumps(
+                self._snapshot(),
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+    def _record_event(
+        self,
+        *,
+        event: str,
+        **payload: Any,
+    ) -> None:
+        self.events.append(
+            {
+                "timestamp": time.time(),
+                "event": event,
+                **payload,
+            }
+        )
+
+        self._write()
+
+    def node_started(
+        self,
+        *,
+        node: str,
+        provider: str | None,
+        attempt: int,
+    ) -> None:
+        with self._lock:
+            self.current_stage = node
+            self.current_provider = provider
+
+            if provider:
+                self.provider_attempts[provider] += 1
+
+            if attempt > 1:
+                self.retry_count += 1
+
+            self._record_event(
+                event="node_started",
+                node=node,
+                provider=provider,
+                attempt=attempt,
+            )
+
+    def node_succeeded(
+        self,
+        *,
+        node: str,
+        provider: str | None,
+        attempt: int,
+    ) -> None:
+        with self._lock:
+            self.current_stage = node
+            self.current_provider = provider
+
+            self._record_event(
+                event="node_succeeded",
+                node=node,
+                provider=provider,
+                attempt=attempt,
+            )
+
+    def node_failed(
+        self,
+        *,
+        node: str,
+        provider: str | None,
+        attempt: int,
+        exc: Exception,
+    ) -> None:
+        with self._lock:
+            self.current_stage = node
+            self.current_provider = provider
+
+            self.failure = {
+                "node": node,
+                "provider": provider,
+                "attempt": attempt,
+                "exception_type": type(exc).__name__,
+                "message": str(exc),
+                "timestamp": time.time(),
+            }
+
+            self._record_event(
+                event="node_failed",
+                node=node,
+                provider=provider,
+                attempt=attempt,
+                exception_type=type(exc).__name__,
+                message=str(exc),
+            )
+
+    def record_markdown_gate(
+        self,
+        *,
+        deterministic_repair_applied: bool,
+        llm_repair_applied: bool,
+    ) -> None:
+        with self._lock:
+            if deterministic_repair_applied:
+                self.markdown_deterministic_repairs += 1
+
+            if llm_repair_applied:
+                self.markdown_llm_repairs += 1
+
+            self._record_event(
+                event="markdown_gate",
+                deterministic_repair_applied=(deterministic_repair_applied),
+                llm_repair_applied=(llm_repair_applied),
+            )
+
+    def record_editorial_review(self) -> None:
+        with self._lock:
+            self.editorial_reviews += 1
+
+            self._record_event(
+                event="editorial_review",
+            )
+
+    def record_revision(self) -> None:
+        with self._lock:
+            self.editorial_revisions += 1
+
+            self._record_event(
+                event="editorial_revision",
+            )
+
+    def record_image_attempt(
+        self,
+        image_id: str,
+    ) -> None:
+        with self._lock:
+            self.image_attempts += 1
+            self.image_ids.append(image_id)
+
+            self._record_event(
+                event="image_attempt",
+                image_id=image_id,
+            )
+
+    def record_final_validation(
+        self,
+        errors: list[str],
+    ) -> None:
+        with self._lock:
+            self.final_validation_failures += len(errors)
+
+            self._record_event(
+                event="final_validation",
+                errors=list(errors),
+            )
+
+    def finish_success(
+        self,
+        result: dict,
+    ) -> None:
+        with self._lock:
+            self.status = "success"
+
+            self._record_event(
+                event="run_finished",
+                status="success",
+            )
+
+    def finish_failure(
+        self,
+        exc: Exception,
+    ) -> None:
+        with self._lock:
+            self.status = "failed"
+
+            if self.failure is None:
+                self.failure = {
+                    "node": self.current_stage or None,
+                    "provider": (self.current_provider),
+                    "attempt": None,
+                    "exception_type": (type(exc).__name__),
+                    "message": str(exc),
+                    "timestamp": time.time(),
+                }
+
+            self._record_event(
+                event="run_finished",
+                status="failed",
+            )
+
+
+def instrument_node(
+    node_name: str,
+    node_function: Callable,
+    *,
+    provider: str | None = None,
+):
+    def wrapped(
+        value,
+        runtime,
+    ):
+        execution_info = runtime.execution_info
+
+        attempt = execution_info.node_attempt if execution_info is not None else 1
+
+        diagnostics = runtime.context["diagnostics"]
+
+        diagnostics.node_started(
+            node=node_name,
+            provider=provider,
+            attempt=attempt,
+        )
+
+        try:
+            result = node_function(value)
+
+        except Exception as exc:
+            diagnostics.node_failed(
+                node=node_name,
+                provider=provider,
+                attempt=attempt,
+                exc=exc,
+            )
+            raise
+
+        diagnostics.node_succeeded(
+            node=node_name,
+            provider=provider,
+            attempt=attempt,
+        )
+
+        return result
+
+    return wrapped
+
+
+def get_current_diagnostics():
+    try:
+        runtime = get_runtime()
+    except RuntimeError:
+        return None
+
+    context = runtime.context
+
+    if not context:
+        return None
+
+    return context.get("diagnostics")

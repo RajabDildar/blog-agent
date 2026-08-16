@@ -10,6 +10,9 @@ from services.run_paths import (
     published_image_path,
     staged_image_path,
 )
+from services.run_diagnostics import (
+    get_current_diagnostics,
+)
 
 
 def generate_images_node(state: State) -> dict:
@@ -74,6 +77,11 @@ def generate_images_node(state: State) -> dict:
             section_title=task.title,
             image_type=spec.image_type,
         )
+
+        diagnostics = get_current_diagnostics()
+
+        if diagnostics is not None:
+            diagnostics.record_image_attempt(spec.id)
 
         try:
             image_bytes = cloudflare_generate_image_bytes(prompt)

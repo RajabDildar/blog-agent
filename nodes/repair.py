@@ -7,6 +7,9 @@ from services.markdown_llm_repair import (
 from services.markdown_quality import (
     run_markdown_quality_gate,
 )
+from services.run_diagnostics import (
+    get_current_diagnostics,
+)
 
 
 def repair_node(
@@ -18,6 +21,8 @@ def repair_node(
         raise ValueError("Repair: plan is missing.")
 
     expected_sections = [task.title for task in plan.tasks]
+
+    diagnostics = get_current_diagnostics()
 
     gate = run_markdown_quality_gate(
         state["merged_md"],
@@ -31,6 +36,7 @@ def repair_node(
             scope="article",
             expected_title=(plan.blog_title),
             expected_sections=(expected_sections),
+            diagnostics=diagnostics,
         ),
     )
 

@@ -2,6 +2,9 @@ from schemas.state import State
 from services.markdown_quality import (
     run_markdown_quality_gate,
 )
+from services.run_diagnostics import (
+    get_current_diagnostics,
+)
 
 
 def article_validator_node(
@@ -14,11 +17,14 @@ def article_validator_node(
 
     expected_sections = [task.title for task in plan.tasks]
 
+    diagnostics = get_current_diagnostics()
+
     gate = run_markdown_quality_gate(
         state["merged_md"],
         profile="article",
         expected_title=plan.blog_title,
         expected_sections=expected_sections,
+        diagnostics=diagnostics,
     )
 
     return {

@@ -15,6 +15,9 @@ from services.markdown_llm_repair import (
 from services.markdown_quality import (
     run_markdown_quality_gate,
 )
+from services.run_diagnostics import (
+    get_current_diagnostics,
+)
 
 
 def worker_node(payload: dict) -> dict:
@@ -74,6 +77,8 @@ def worker_node(payload: dict) -> dict:
 
     markdown = result.body_markdown.strip()
 
+    diagnostics = get_current_diagnostics()
+
     gate = run_markdown_quality_gate(
         markdown,
         profile="section",
@@ -84,6 +89,7 @@ def worker_node(payload: dict) -> dict:
             errors=errors,
             scope="section",
             expected_title=task.title,
+            diagnostics=diagnostics,
         ),
     )
 

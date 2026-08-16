@@ -19,6 +19,9 @@ from services.markdown_validation import (
 from services.section_validation import (
     validate_section_markdown,
 )
+from services.run_diagnostics import (
+    RunDiagnostics,
+)
 
 
 Profile = Literal[
@@ -82,6 +85,7 @@ def run_markdown_quality_gate(
     expected_title: str,
     expected_sections: Sequence[str] = (),
     llm_repair: RepairCallback | None = None,
+    diagnostics: RunDiagnostics | None = None,
 ) -> MarkdownGateResult:
     current = normalize_markdown(markdown)
 
@@ -134,6 +138,12 @@ def run_markdown_quality_gate(
 
     # Still invalid: do not format it.
     if errors:
+        if diagnostics is not None:
+            diagnostics.record_markdown_gate(
+                deterministic_repair_applied=(deterministic_applied),
+                llm_repair_applied=(llm_applied),
+            )
+
         return MarkdownGateResult(
             markdown=current,
             errors=errors,
@@ -151,6 +161,12 @@ def run_markdown_quality_gate(
         expected_title=expected_title,
         expected_sections=expected_sections,
     )
+
+    if diagnostics is not None:
+        diagnostics.record_markdown_gate(
+            deterministic_repair_applied=(deterministic_applied),
+            llm_repair_applied=(llm_applied),
+        )
 
     return MarkdownGateResult(
         markdown=formatted,

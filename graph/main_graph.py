@@ -25,6 +25,14 @@ from schemas.state import State
 from nodes.article_validator import (
     article_validator_node,
 )
+from schemas.context import RunContext
+from services.run_diagnostics import (
+    RunDiagnostics,
+    instrument_node,
+)
+from services.run_diagnostics import (
+    get_current_diagnostics,
+)
 
 
 def fanout(state: State):
@@ -167,6 +175,12 @@ def route_after_final_validation(
 def mark_revision(
     state: State,
 ) -> dict:
+
+    diagnostics = get_current_diagnostics()
+
+    if diagnostics is not None:
+        diagnostics.record_revision()
+
     return {"revision_count": (state["revision_count"] + 1)}
 
 
@@ -202,96 +216,155 @@ def final_validation_failure_node(
 
 
 def build_graph():
-    builder = StateGraph(State)
+    builder = StateGraph(
+        State,
+        context_schema=RunContext,
+    )
 
     # ----------------------- Nodes ---------------------------
 
     builder.add_node(
         "router",
-        router_node,
+        instrument_node(
+            "router",
+            router_node,
+            provider="gemini",
+        ),
         retry_policy=provider_retry_policy,
     )
 
     builder.add_node(
         "research",
-        research_node,
+        instrument_node(
+            "research",
+            research_node,
+            provider="tavily+gemini",
+        ),
         retry_policy=provider_retry_policy,
     )
 
     builder.add_node(
         "orchestrator",
-        orchestrator_node,
+        instrument_node(
+            "orchestrator",
+            orchestrator_node,
+            provider="gemini",
+        ),
         retry_policy=provider_retry_policy,
     )
 
     builder.add_node(
         "worker",
-        worker_node,
+        instrument_node(
+            "worker",
+            worker_node,
+            provider="groq",
+        ),
         retry_policy=provider_retry_policy,
     )
-
     builder.add_node(
         "merge",
-        merge_content,
+        instrument_node(
+            "merge",
+            merge_content,
+        ),
     )
 
     builder.add_node(
         "editor",
-        editor_node,
+        instrument_node(
+            "editor",
+            editor_node,
+            provider="gemini",
+        ),
         retry_policy=provider_retry_policy,
     )
 
     builder.add_node(
         "revision",
-        revision_node,
+        instrument_node(
+            "revision",
+            revision_node,
+            provider="groq",
+        ),
         retry_policy=provider_retry_policy,
     )
 
     builder.add_node(
         "mark_revision",
-        mark_revision,
+        instrument_node(
+            "mark_revision",
+            mark_revision,
+        ),
     )
 
     builder.add_node(
         "article_validator",
-        article_validator_node,
+        instrument_node(
+            "article_validator",
+            article_validator_node,
+        ),
     )
 
     builder.add_node(
         "repair",
-        repair_node,
+        instrument_node(
+            "repair",
+            repair_node,
+            provider="groq",
+        ),
         retry_policy=provider_retry_policy,
     )
 
     builder.add_node(
         "article_validation_failure",
-        article_validation_failure_node,
+        instrument_node(
+            "article_validation_failure",
+            article_validation_failure_node,
+        ),
     )
 
     builder.add_node(
         "image_planner",
-        image_planner_node,
+        instrument_node(
+            "image_planner",
+            image_planner_node,
+            provider="gemini",
+        ),
         retry_policy=provider_retry_policy,
     )
 
     builder.add_node(
         "image_generator",
-        generate_images_node,
+        instrument_node(
+            "image_generator",
+            generate_images_node,
+            provider="cloudflare",
+        ),
     )
 
     builder.add_node(
         "validator",
-        validator_node,
+        instrument_node(
+            "validator",
+            validator_node,
+        ),
     )
 
     builder.add_node(
         "final_validation_failure",
-        final_validation_failure_node,
+        instrument_node(
+            "final_validation_failure",
+            final_validation_failure_node,
+        ),
     )
 
     builder.add_node(
         "save",
-        save_node,
+        instrument_node(
+            "save",
+            save_node,
+        ),
     )
 
     # ----------------------- Edges ---------------------------
@@ -408,32 +481,53 @@ app = build_graph()
 def run(topic: str):
     run_id = uuid4().hex
 
-    return app.invoke(
-        {
-            "run_id": run_id,
-            "topic": topic,
-            "mode": "",
-            "needs_research": False,
-            "queries": [],
-            "research_focus": [],
-            "evidence": [],
-            "research_brief": "",
-            "plan": None,
-            "sections": {},
-            "merged_md": "",
-            "editorial_review": None,
-            "revision_count": 0,
-            "image_specs": [],
-            "image_results": [],
-            "final": "",
-            "article_validation_errors": [],
-            "article_validation_passed": False,
-            "article_repair_count": 0,
-            "final_validation_errors": [],
-            "final_validation_passed": False,
-            "saved_path": "",
-        },
-        {
-            "recursion_limit": 50,
-        },
+    print(f"\nRun ID: {run_id}")
+
+    diagnostics = RunDiagnostics(
+        run_id=run_id,
+        topic=topic,
     )
+
+    context = {
+        "diagnostics": diagnostics,
+    }
+
+    try:
+        result = app.invoke(
+            {
+                "run_id": run_id,
+                "topic": topic,
+                "mode": "",
+                "needs_research": False,
+                "queries": [],
+                "research_focus": [],
+                "evidence": [],
+                "research_brief": "",
+                "plan": None,
+                "sections": {},
+                "merged_md": "",
+                "editorial_review": None,
+                "revision_count": 0,
+                "image_specs": [],
+                "image_results": [],
+                "final": "",
+                "article_validation_errors": [],
+                "article_validation_passed": False,
+                "article_repair_count": 0,
+                "final_validation_errors": [],
+                "final_validation_passed": False,
+                "saved_path": "",
+            },
+            {
+                "recursion_limit": 50,
+            },
+            context=context,
+        )
+
+    except Exception as exc:
+        diagnostics.finish_failure(exc)
+        raise
+
+    diagnostics.finish_success(result)
+
+    return result

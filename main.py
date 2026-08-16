@@ -7,6 +7,8 @@ if __name__ == "__main__":
     if not topic:
         raise SystemExit("Topic cannot be empty.")
 
+    print("\nStarting blog generation...")
+
     try:
         result = run(topic)
 
@@ -25,4 +27,8 @@ if __name__ == "__main__":
 
     print(f"Images inserted: {len(result['image_results'])}")
 
+    print(f"Run ID: {result['run_id']}")
+
     print(f"Saved to: {result['saved_path']}")
+
+    print(f"Diagnostics: runs/{result['run_id']}/diagnostics.json")
