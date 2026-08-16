@@ -1,102 +1,96 @@
 # Blog Agent
 
-A Python-based technical blog generation system built with LangGraph, LangChain, Groq, Gemini, Tavily, and Cloudflare Workers AI.
+A Python-based technical blog generation workflow built with LangGraph, LangChain, Groq, Gemini, Tavily, and Cloudflare Workers AI.
 
-The project uses a structured multi-stage workflow to research a topic when needed, plan the article, generate sections in parallel, review and revise the content, validate the Markdown, generate relevant images, embed those images into the correct sections, and save the final article only after validation succeeds.
+The agent takes a topic, decides whether research is needed, plans the article, generates sections in parallel, reviews and revises the content, validates Markdown, plans and generates images, validates the final artifact, and saves the result only after the final checks pass.
 
-## Features
+## What it does
 
-* Topic-aware routing between closed-book and research-backed generation.
-* Web research through Tavily for current or externally grounded topics.
-* Structured article planning with explicit sections, goals, word targets, and requirements.
-* Parallel section generation using LangGraph `Send`.
-* Editorial review with targeted section-level revision.
-* Deterministic Markdown and section validation.
-* Controlled repair flow for structural Markdown problems.
-* LLM-assisted repair when deterministic fixes are insufficient.
-* Image planning based on the actual article structure.
-* Article-specific image descriptions and generation prompts.
-* Cloudflare Workers AI image generation.
-* Automatic image placement inside the corresponding article sections.
-* Final artifact validation before saving.
-* Generated blogs saved as Markdown files.
-* LangSmith-compatible tracing for inspecting workflow execution.
+- Routes topics between closed-book and research-backed generation.
+- Uses Tavily for web research when required.
+- Creates a structured article plan with ordered sections.
+- Generates section bodies in parallel with LangGraph `Send`.
+- Reviews the assembled article and revises selected sections.
+- Enforces deterministic H1/H2 ownership in Python.
+- Parses Markdown with `markdown-it-py` instead of relying on regex for document structure.
+- Repairs Markdown deterministically first, then with an LLM when needed.
+- Formats Markdown with `mdformat` and validates it again afterward.
+- Plans up to three article-specific images.
+- Generates images with Cloudflare Workers AI and inserts them into the planned sections.
+- Stages generated images per run to prevent cross-run contamination.
+- Performs a final Markdown and image integrity check before publishing.
+- Records per-run diagnostics, including stages, provider attempts, retries, repairs, revisions, image attempts, and failures.
 
-## Architecture
-
-The generation workflow is organized as a LangGraph state machine:
+## Workflow
 
 ```text
 START
-  │
-  ▼
+  |
+  v
 Router
-  │
-  ├── Research ──────────────┐
-  │                          │
-  └──────────────────────────┤
-                             ▼
-                         Orchestrator
-                             │
-                             ▼
-                       Parallel Workers
-                             │
-                             ▼
-                           Merge
-                             │
-                             ▼
-                          Editor
-                             │
-                 ┌───────────┴───────────┐
-                 │                       │
-             Approved              Revision needed
-                 │                       │
-                 │                       ▼
-                 │                   Revision
-                 │                       │
-                 │                 Mark revision
-                 │                       │
-                 └───────────► Merge ◄───┘
-                             │
-                             ▼
-                   Article Validation
-                             │
-                 ┌───────────┴───────────┐
-                 │                       │
-               Valid                  Invalid
-                 │                       │
-                 │                     Repair
-                 │                       │
-                 │               Validate again
-                 │                       │
-                 └───────────► Image Planner
-                             │
-                             ▼
-                       Image Generator
-                             │
-                             ▼
-                     Final Validation
-                             │
-                 ┌───────────┴───────────┐
-                 │                       │
-               Valid                  Invalid
-                 │                       │
-                 ▼                       ▼
-               Save                    Stop
-                 │
-                 ▼
-                END
+  |
+  +---- Research ----+
+  |                  |
+  +------------------+
+           |
+           v
+      Orchestrator
+           |
+           v
+    Parallel Workers
+           |
+           v
+         Merge
+           |
+           v
+        Editor
+           |
+      +----+----+
+      |         |
+   Approved   Revise
+      |         |
+      |      Revision
+      |         |
+      +----<----+
+           |
+           v
+   Article Validation
+           |
+       +---+---+
+       |       |
+     Valid   Invalid
+       |       |
+       |     Repair
+       |       |
+       +---<---+
+           |
+           v
+      Image Planner
+           |
+           v
+     Image Generator
+           |
+           v
+    Final Validation
+           |
+       +---+---+
+       |       |
+     Valid   Invalid
+       |       |
+       v       v
+      Save    Stop
+       |
+       v
+      END
 ```
 
-There are two validation stages.
+Two validation boundaries are intentional.
 
-**Article validation** runs before image generation and checks the generated article structure.
+**Article validation** checks the article before image generation.
 
-**Final validation** runs after image generation and checks both the Markdown and image references.
+**Final validation** checks the completed Markdown and generated image artifacts before publication.
 
-This keeps content repair separate from image processing and prevents a broken final artifact from being written to disk.
-
-## Project Structure
+## Project structure
 
 ```text
 blog-agent/
@@ -110,134 +104,106 @@ blog-agent/
 │   └── main_graph.py
 ├── images/
 ├── nodes/
-│   ├── article_validator.py
-│   ├── editor.py
-│   ├── image_generator.py
-│   ├── image_planner.py
-│   ├── merger.py
-│   ├── orchestrator.py
-│   ├── repair.py
-│   ├── research.py
-│   ├── revision.py
-│   ├── router.py
-│   ├── save.py
-│   ├── validator.py
-│   └── worker.py
 ├── prompts/
-│   ├── editor.py
-│   ├── image.py
-│   ├── planner.py
-│   ├── repair.py
-│   ├── research.py
-│   ├── revision.py
-│   ├── router.py
-│   └── writer.py
 ├── schemas/
 │   ├── models.py
-│   └── state.py
+│   ├── state.py
+│   └── context.py
 ├── services/
 │   ├── cloudflare.py
 │   ├── final_validation.py
 │   ├── image_prompt.py
-│   ├── image_validation.py
 │   ├── llm.py
 │   ├── markdown.py
+│   ├── markdown_format.py
+│   ├── markdown_llm_repair.py
+│   ├── markdown_parser.py
+│   ├── markdown_quality.py
 │   ├── markdown_repair.py
 │   ├── markdown_validation.py
-│   ├── run_metrics.py
+│   ├── run_diagnostics.py
+│   ├── run_paths.py
 │   ├── section_validation.py
 │   ├── storage.py
 │   └── tavily.py
 ├── tests/
 ├── .env.example
+├── .gitignore
 ├── LICENSE
 ├── main.py
 ├── pyproject.toml
 └── uv.lock
 ```
 
-## Technology Stack
+## Technology
 
-| Component                                       | Technology            |
-| ----------------------------------------------- | --------------------- |
-| Language                                        | Python 3.14+          |
-| Workflow orchestration                          | LangGraph             |
-| LLM framework                                   | LangChain             |
-| Writing and revision                            | Groq                  |
-| Planning, routing, editing, research processing | Google Gemini         |
-| Web research                                    | Tavily                |
-| Image generation                                | Cloudflare Workers AI |
-| Validation                                      | Python + Pydantic     |
-| Observability                                   | LangSmith             |
-| Dependency management                           | uv                    |
+| Area | Technology |
+|---|---|
+| Language | Python 3.14+ |
+| Workflow | LangGraph |
+| LLM framework | LangChain |
+| Writing and revision | Groq |
+| Routing, planning, research processing, editing | Gemini |
+| Web research | Tavily |
+| Image generation | Cloudflare Workers AI |
+| Structured data | Pydantic |
+| Markdown parsing | markdown-it-py |
+| Markdown formatting | mdformat + GFM |
+| Tracing | LangSmith |
+| Package management | uv |
+| Testing | pytest |
 
-## Models
+## Models and providers
 
-The project separates model responsibilities rather than using a single model for every operation.
+Model names are configured through environment variables in `config/settings.py`.
 
-The current configuration supports:
+The current workflow uses:
 
-* Groq model for section writing.
-* Groq model for revisions and Markdown repair.
-* Gemini model for routing, planning, editorial review, research extraction, and image planning.
-* Cloudflare Workers AI for image generation.
+- Groq for section writing and revision/repair.
+- Gemini for routing, research extraction, article planning, editorial review, and image planning.
+- Tavily for web search.
+- Cloudflare Workers AI for image generation.
 
-Models are configured through environment variables in `config/settings.py`.
+The repository's `.env.example` contains the current environment variable names and model settings.
 
-## Installation
+## Setup
 
-The project uses `uv` for environment and dependency management.
-
-Clone the repository and enter the project directory:
+Clone the repository:
 
 ```bash
 git clone https://github.com/RajabDildar/blog-agent.git
 cd blog-agent
 ```
 
-Create the environment and install dependencies:
+Install the project and development dependencies:
 
 ```bash
 uv sync
 ```
 
-## Environment Variables
-
-Create a `.env` file in the project root.
-
-Use `.env.example` as the starting point:
+Create the environment file:
 
 ```bash
 cp .env.example .env
 ```
 
-Configure the required API credentials.
+Fill in the API credentials in `.env`.
 
-Typical variables include:
+Required credentials:
 
 ```env
 GROQ_API_KEY=your_groq_api_key
 GOOGLE_API_KEY=your_google_api_key
 TAVILY_API_KEY=your_tavily_api_key
-
 CLOUDFLARE_ACCOUNT_ID=your_cloudflare_account_id
 CLOUDFLARE_API_TOKEN=your_cloudflare_api_token
 ```
 
-Optional model configuration can be set through:
+Never commit `.env` or real API credentials.
 
-```env
-GROQ_WRITER_MODEL=llama-3.3-70b-versatile
-GROQ_REVISION_MODEL=llama-3.3-70b-versatile
-GEMINI_MODEL=gemini-3.1-flash-lite
-CLOUDFLARE_IMAGE_MODEL=@cf/black-forest-labs/flux-1-schnell
-```
+## Run
 
-Do not commit `.env` or API credentials.
-
-## Running the Agent
-
-Start the application with:
+Start the agent:
 
 ```bash
 uv run python3 main.py
@@ -246,151 +212,152 @@ uv run python3 main.py
 Enter a topic when prompted:
 
 ```text
-Enter blog topic: AI Agents
+Enter blog topic: AI agents in production
 ```
 
-After a successful run, the terminal reports the generated title, revision count, image count, validation repairs, and output path.
+A successful run reports the generated title, revision count, image counts, output path, and run diagnostics path.
 
-Generated articles are written to:
+## Output
+
+Generated Markdown articles are saved under:
 
 ```text
 generated_blogs/
 ```
 
-Generated images are written to:
+Published generated images are stored under article/run-specific directories:
 
 ```text
-images/
+images/<article>/<run_id>/
 ```
 
-## Validation and Failure Handling
+Each execution also gets a private staging directory:
 
-Validation is a hard requirement for successful generation.
+```text
+runs/<run_id>/images/
+```
 
-The workflow does not save the article until the final artifact passes validation.
+Run diagnostics are written to:
 
-The article validation stage checks structural requirements such as:
+```text
+runs/<run_id>/diagnostics.json
+```
 
-* exactly one H1
-* correct H2 section structure
-* expected section order
-* balanced Markdown code fences
-* absence of unresolved generation markers
+The `runs/` directory is ignored by Git.
 
-If structural validation fails, the workflow attempts a controlled repair. Deterministic fixes are preferred for problems that can be safely corrected in code. An LLM repair step is used for remaining structural problems.
+## Reliability and validation
 
-After image generation, the final validator additionally checks that:
+The workflow is designed so invalid artifacts do not silently reach the output directory.
 
-* generated images are actually referenced by the article
-* image paths resolve to existing files
-* planned images were successfully inserted
+### Markdown
 
-A failed final validation stops the workflow rather than saving an invalid article.
+Python owns the article H1 and planned H2 structure. Workers return section body Markdown only.
 
-## Image Generation and Placement
+The Markdown layer:
 
-Images are planned from the final article structure rather than generated independently of the content.
+1. parses Markdown structurally with `markdown-it-py`
+2. validates the document
+3. applies deterministic repairs where safe
+4. uses LLM repair only when needed
+5. validates the repaired result
+6. formats valid Markdown
+7. validates the formatted result again
 
-For each selected section, the image planner determines:
+Code blocks are treated as code rather than article structure.
 
-* the section that needs a visual
-* the visual type
-* why the image is useful
-* what should appear in the image
-* important visual elements
-* placement within the section
-* alt text
-* caption
+### Images
 
-The application then builds a consistent generation prompt from that structured specification and sends it to Cloudflare Workers AI.
+Generated images are isolated by `run_id`.
 
-Images are inserted into the corresponding Markdown section using the planned placement.
+Before publication, the system checks that:
 
-The system also verifies that every generated image is actually embedded in the final article.
+- every generated image was inserted
+- each generated image is referenced exactly once
+- generated paths are unique
+- staged images exist and are non-empty
+- published paths match the paths embedded in Markdown
+- unrelated local image references exist
+- failed image generation does not get silently ignored
+
+### Publication
+
+The final Markdown is written only after final validation succeeds.
+
+Image publication is validated before the Markdown replacement, and the storage layer cleans up newly published images if a later publication step fails.
+
+### Provider failures
+
+LLM model-level retries are disabled. LangGraph owns provider retries through a shared retry policy.
+
+Transient provider failures such as rate limits, timeouts, connection failures, and applicable server errors can be retried. Permanent request or validation errors are not treated as transient.
+
+Cloudflare image generation uses its own small retry policy for transient image-provider failures and avoids retrying permanent request/configuration errors.
+
+## Run diagnostics
+
+Every run has a unique `run_id`.
+
+Diagnostics record information such as:
+
+```text
+current stage
+current provider
+provider attempts
+retry count
+Markdown repairs
+editorial reviews
+editorial revisions
+image attempts
+final validation failures
+failure type and message
+```
+
+This makes failed executions inspectable without putting diagnostic data into the graph state.
 
 ## Testing
 
-Run the test suite with:
+Run the complete test suite:
 
 ```bash
 uv run pytest
 ```
 
-The tests cover:
+The tests cover the main reliability boundaries, including:
 
-* article Markdown validation
-* section-level validation
-* image insertion
-* final artifact validation
-* heading and code-fence validation
-* structural repair behavior
+- Markdown parsing and validation
+- section validation
+- deterministic and LLM Markdown repair
+- Markdown quality-gate behavior
+- image insertion
+- final image validation
+- run-isolated image generation
+- filesystem publication
+- partial publication cleanup
+- provider retry classification
+- LangGraph retry behavior
+- provider exception preservation
+- run diagnostics
 
-The test suite is intended to catch workflow regressions before generating new articles.
+## Development principles
 
-## Observability
+The project intentionally keeps the workflow small and explicit.
 
-The project can be traced with LangSmith.
-
-Tracing is useful for inspecting:
-
-* router decisions
-* research queries and evidence
-* article planning
-* parallel section generation
-* editorial feedback
-* revision inputs and outputs
-* image planning
-* validation failures
-* repair attempts
-* final artifact generation
-
-This is especially useful when a generated article does not match the expected workflow behavior.
+- Let Python own deterministic structure.
+- Let the LLM handle generation and judgment.
+- Parse Markdown instead of guessing document structure from strings.
+- Validate after transformations.
+- Separate content failures from provider, filesystem, and programming failures.
+- Keep side effects behind validation boundaries.
+- Preserve original provider exceptions so retry policy can classify them.
+- Prefer focused tests around failure cases rather than relying only on successful generated articles.
+- Avoid adding orchestration or abstractions unless the current workflow proves they are needed.
 
 ## Evaluation
 
-The `eval/` directory contains the beginnings of a repeatable evaluation workflow.
+The `eval/` directory contains the current evaluation topics and supporting files.
 
-`eval/topics.json` contains test topics that can be used to compare generation behavior across changes to the workflow.
-
-The purpose of evaluation is to compare actual generated artifacts instead of relying on a single successful example.
-
-## Output
-
-A successful run produces two types of artifacts.
-
-### Blog
-
-```text
-generated_blogs/
-└── ai_agents.md
-```
-
-### Images
-
-```text
-images/
-├── 1_agent_architecture.png
-├── 2_reasoning_loop.png
-└── ...
-```
-
-The generated Markdown references the corresponding local image paths.
-
-## Development Principles
-
-The project intentionally favors a controlled workflow over adding more agents or unnecessary orchestration.
-
-The main design principles are:
-
-* Use structured outputs between workflow stages.
-* Validate deterministic requirements in Python.
-* Use LLMs for tasks that require judgment or generation.
-* Fail explicitly when required operations fail.
-* Do not silently skip failed image generation or insertion.
-* Keep article repair separate from image processing.
-* Save only after final validation succeeds.
-* Keep the workflow understandable and testable.
+Generated articles in `generated_blogs/` can be reviewed as concrete workflow outputs, while the test suite provides the main regression protection for Markdown and artifact correctness.
 
 ## License
 
-This project is licensed under the MIT License. See [`LICENSE`](LICENSE) for the full license text.
+This project is licensed under the MIT License. See [`LICENSE`](LICENSE).
