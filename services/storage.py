@@ -141,26 +141,40 @@ def publish_blog(
             )
         )
 
-    # Publish images first.
+        # Publish images first.
     #
     # If image publishing fails, the final
     # Markdown file is never replaced.
-    for (
-        source,
-        destination,
-    ) in prepared_images:
-        _atomic_copy_file(
+    published_now: list[Path] = []
+
+    try:
+        for (
             source,
             destination,
+        ) in prepared_images:
+            destination_existed = destination.exists()
+
+            _atomic_copy_file(
+                source,
+                destination,
+            )
+
+            if not destination_existed:
+                published_now.append(destination)
+
+        blog_path = Path("generated_blogs") / safe_blog_filename(title)
+
+        # Markdown replacement is the final
+        # successful publish point.
+        _atomic_write_text(
+            blog_path,
+            markdown,
         )
 
-    blog_path = Path("generated_blogs") / safe_blog_filename(title)
+        return blog_path
 
-    # Markdown replacement is the final
-    # successful publish point.
-    _atomic_write_text(
-        blog_path,
-        markdown,
-    )
+    except Exception:
+        for destination in reversed(published_now):
+            destination.unlink(missing_ok=True)
 
-    return blog_path
+        raise
