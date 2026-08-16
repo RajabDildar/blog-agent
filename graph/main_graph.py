@@ -81,6 +81,10 @@ def fanout(state: State):
     return sends
 
 
+def generate_run_id() -> str:
+    return uuid4().hex
+
+
 def route_after_merge(state: State):
     if state["revision_count"] >= MAX_EDITORIAL_REVISIONS:
         return "article_validator"
@@ -478,10 +482,13 @@ def build_graph():
 app = build_graph()
 
 
-def run(topic: str):
-    run_id = uuid4().hex
-
-    print(f"\nRun ID: {run_id}")
+def run(
+    topic: str,
+    *,
+    run_id: str | None = None,
+):
+    if run_id is None:
+        run_id = generate_run_id()
 
     diagnostics = RunDiagnostics(
         run_id=run_id,

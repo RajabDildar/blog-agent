@@ -276,6 +276,74 @@ class RunDiagnostics:
             )
 
 
+def diagnostics_path(
+    run_id: str,
+) -> Path:
+    return Path("runs") / run_id / "diagnostics.json"
+
+
+def load_diagnostics(
+    run_id: str,
+) -> dict:
+    path = diagnostics_path(run_id)
+
+    if not path.is_file():
+        return {}
+
+    return json.loads(
+        path.read_text(
+            encoding="utf-8",
+        )
+    )
+
+
+def format_cli_summary(
+    data: dict,
+) -> str:
+    run_id = data.get(
+        "run_id",
+        "unknown",
+    )
+
+    stage = data.get("current_stage") or "unknown"
+
+    provider = data.get("current_provider") or "none"
+
+    retry_count = data.get(
+        "retry_count",
+        0,
+    )
+
+    provider_attempts = data.get(
+        "provider_attempts",
+        {},
+    )
+
+    attempts = 1
+
+    if provider in provider_attempts:
+        attempts = provider_attempts[provider]
+
+    failure = data.get("failure") or {}
+
+    exception_type = failure.get("exception_type") or "unknown"
+
+    message = failure.get("message") or "unknown"
+
+    return "\n".join(
+        [
+            f"Run ID: {run_id}",
+            f"Stage: {stage}",
+            f"Provider: {provider}",
+            f"Attempts: {attempts}",
+            f"Retries: {retry_count}",
+            f"Failure: {exception_type}",
+            f"Message: {message}",
+            (f"Diagnostics: {diagnostics_path(run_id)}"),
+        ]
+    )
+
+
 def instrument_node(
     node_name: str,
     node_function: Callable,
