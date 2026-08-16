@@ -211,3 +211,39 @@ def find_first_body_block_end(
             )
 
     return start_line
+
+
+def contains_text_outside_code(
+    markdown: str,
+    needle: str,
+) -> bool:
+    """
+    Return True when `needle` appears in Markdown content outside
+    fenced/block code and inline code.
+
+    Markdown structure is determined by markdown-it-py tokens rather
+    than by raw string scanning.
+    """
+    for token in parse_markdown(markdown):
+        # Fenced and indented code are not article prose.
+        if token.type in {
+            "fence",
+            "code_block",
+        }:
+            continue
+
+        if token.type != "inline":
+            if needle in token.content:
+                return True
+
+            continue
+
+        for child in token.children or []:
+            # Inline code is content, not article prose.
+            if child.type == "code_inline":
+                continue
+
+            if needle in child.content:
+                return True
+
+    return False

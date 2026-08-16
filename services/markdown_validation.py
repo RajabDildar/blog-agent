@@ -1,6 +1,7 @@
 from collections.abc import Sequence
 
 from services.markdown_parser import (
+    contains_text_outside_code,
     find_unclosed_fence,
     get_headings,
 )
@@ -80,7 +81,10 @@ def validate_article_markdown(
         )
 
     for marker, error in FORBIDDEN_MARKERS.items():
-        if marker in markdown:
+        if contains_text_outside_code(
+            markdown,
+            marker,
+        ):
             errors.append(error)
 
     return errors
