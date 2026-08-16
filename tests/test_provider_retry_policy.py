@@ -1,6 +1,7 @@
 import httpx
 import groq
 import pytest
+from google.genai import errors as genai_errors
 from langgraph.types import RetryPolicy
 
 from config.settings import (
@@ -19,6 +20,85 @@ def make_groq_response(status_code: int) -> httpx.Response:
         status_code,
         request=request,
     )
+
+
+def test_gemini_server_error_is_transient():
+    exc = genai_errors.ServerError(
+        503,
+        {
+            "error": {
+                "status": "UNAVAILABLE",
+                "message": "Temporary provider failure",
+            }
+        },
+        None,
+    )
+
+    assert is_transient_provider_error(exc) is True
+
+
+def test_gemini_rate_limit_is_transient():
+    exc = genai_errors.ClientError(
+        429,
+        {
+            "error": {
+                "status": "RESOURCE_EXHAUSTED",
+                "message": "Rate limited",
+            }
+        },
+        None,
+    )
+
+    assert is_transient_provider_error(exc) is True
+
+
+@pytest.mark.parametrize(
+    "status_code",
+    [400, 401, 403, 404, 422],
+)
+def test_gemini_non_transient_client_error_is_not_retryable(
+    status_code,
+):
+    exc = genai_errors.ClientError(
+        status_code,
+        {
+            "error": {
+                "status": "CLIENT_ERROR",
+                "message": "Permanent request failure",
+            }
+        },
+        None,
+    )
+
+    assert is_transient_provider_error(exc) is False
+
+
+def test_httpx_connect_error_is_transient():
+    request = httpx.Request(
+        "POST",
+        "https://example.com",
+    )
+
+    exc = httpx.ConnectError(
+        "connection failed",
+        request=request,
+    )
+
+    assert is_transient_provider_error(exc) is True
+
+
+def test_httpx_timeout_is_transient():
+    request = httpx.Request(
+        "POST",
+        "https://example.com",
+    )
+
+    exc = httpx.ReadTimeout(
+        "request timed out",
+        request=request,
+    )
+
+    assert is_transient_provider_error(exc) is True
 
 
 def test_rate_limit_is_transient():
@@ -51,9 +131,11 @@ def test_groq_server_error_is_transient():
 
 @pytest.mark.parametrize(
     "status_code",
-    [429, 500, 502, 503, 504],
+    [408, 409, 429, 500, 502, 503, 504],
 )
-def test_http_transient_status_is_transient(status_code):
+def test_http_transient_status_is_transient(
+    status_code,
+):
     exc = Exception("provider error")
     exc.status_code = status_code
 
@@ -62,13 +144,45 @@ def test_http_transient_status_is_transient(status_code):
 
 @pytest.mark.parametrize(
     "status_code",
-    [400, 401, 403, 404, 409, 422],
+    [400, 401, 403, 404, 422],
 )
-def test_non_transient_http_status_is_not_retryable(status_code):
+def test_non_transient_http_status_is_not_retryable(
+    status_code,
+):
     exc = Exception("client error")
     exc.status_code = status_code
 
     assert is_transient_provider_error(exc) is False
+
+
+def test_retry_policy_retries_gemini_rate_limit():
+    exc = genai_errors.ClientError(
+        429,
+        {
+            "error": {
+                "status": "RESOURCE_EXHAUSTED",
+                "message": "Rate limited",
+            }
+        },
+        None,
+    )
+
+    assert provider_retry_policy.retry_on(exc) is True
+
+
+def test_retry_policy_does_not_retry_gemini_bad_request():
+    exc = genai_errors.ClientError(
+        400,
+        {
+            "error": {
+                "status": "INVALID_ARGUMENT",
+                "message": "Bad request",
+            }
+        },
+        None,
+    )
+
+    assert provider_retry_policy.retry_on(exc) is False
 
 
 def test_value_error_is_not_retryable():

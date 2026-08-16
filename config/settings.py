@@ -1,8 +1,9 @@
 import os
-from collections.abc import Callable
 
 import groq
+import httpx
 from dotenv import load_dotenv
+from google.genai import errors as genai_errors
 from langchain_core.rate_limiters import InMemoryRateLimiter
 from langgraph.types import RetryPolicy
 
@@ -17,6 +18,8 @@ rate_limiter = InMemoryRateLimiter(
 
 
 TRANSIENT_HTTP_STATUS_CODES = {
+    408,
+    409,
     429,
     500,
     502,
@@ -30,6 +33,7 @@ def is_transient_provider_error(
 ) -> bool:
     """Return True only for provider failures worth retrying."""
 
+    # Groq
     if isinstance(
         exc,
         (
@@ -41,22 +45,57 @@ def is_transient_provider_error(
     ):
         return True
 
+    # Gemini / google-genai
+    if isinstance(
+        exc,
+        genai_errors.ServerError,
+    ):
+        return True
+
+    if isinstance(
+        exc,
+        genai_errors.ClientError,
+    ):
+        return (
+            getattr(
+                exc,
+                "code",
+                None,
+            )
+            in TRANSIENT_HTTP_STATUS_CODES
+        )
+
+    # Generic transport failures
     if isinstance(
         exc,
         (
             ConnectionError,
             TimeoutError,
+            httpx.ConnectError,
+            httpx.ReadError,
+            httpx.RemoteProtocolError,
+            httpx.TimeoutException,
         ),
     ):
         return True
 
+    # Generic HTTP/provider errors
     status_code = getattr(
         exc,
         "status_code",
         None,
     )
 
-    return status_code in TRANSIENT_HTTP_STATUS_CODES
+    if status_code in TRANSIENT_HTTP_STATUS_CODES:
+        return True
+
+    code = getattr(
+        exc,
+        "code",
+        None,
+    )
+
+    return code in TRANSIENT_HTTP_STATUS_CODES
 
 
 provider_retry_policy = RetryPolicy(
