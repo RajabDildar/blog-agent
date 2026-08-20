@@ -3,11 +3,11 @@ from langchain_core.messages import (
     SystemMessage,
 )
 
+from prompts.research import RESEARCH_SYSTEM
 from schemas.models import ResearchPack
 from schemas.state import State
 from services.llm import gemini_llm
 from services.tavily import tavily_search
-from prompts.research import RESEARCH_SYSTEM
 
 
 def research_node(

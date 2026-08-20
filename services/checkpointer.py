@@ -3,10 +3,9 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Union, Self
+from typing import Self
 
 from langgraph.checkpoint.sqlite import SqliteSaver
-
 
 PathLike = str | Path
 

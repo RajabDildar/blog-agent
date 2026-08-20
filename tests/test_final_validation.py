@@ -7,7 +7,6 @@ from services.run_paths import (
     staged_image_path,
 )
 
-
 RUN_ID = "d" * 32
 TITLE = "Final Validation"
 

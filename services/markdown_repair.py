@@ -7,7 +7,6 @@ from services.markdown_parser import (
     get_headings,
 )
 
-
 ATX_HEADING_RE = re.compile(
     r"^(?P<indent> {0,3})"
     r"(?P<marker>#{1,6})"

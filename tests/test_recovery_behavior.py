@@ -1,8 +1,9 @@
 import threading
+from typing import Annotated
 
 import pytest
 from langgraph.graph import END, START, StateGraph
-from typing_extensions import Annotated, TypedDict
+from typing_extensions import TypedDict
 
 from services.checkpointer import create_checkpointer
 

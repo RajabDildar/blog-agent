@@ -1,9 +1,8 @@
-from dataclasses import dataclass
 import re
+from dataclasses import dataclass
 
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
-
 
 PARSER = MarkdownIt("gfm-like2", {"html": True})
 

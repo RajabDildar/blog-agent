@@ -3,13 +3,13 @@ from langchain_core.messages import (
     SystemMessage,
 )
 
+from prompts.revision import REVISION_SYSTEM
 from schemas.models import (
     EditorialIssue,
     SectionOutput,
     Task,
 )
 from services.llm import revision_llm
-from prompts.revision import REVISION_SYSTEM
 from services.markdown_llm_repair import (
     repair_markdown_with_llm,
 )

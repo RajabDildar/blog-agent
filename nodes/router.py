@@ -3,10 +3,10 @@ from langchain_core.messages import (
     SystemMessage,
 )
 
+from prompts.router import ROUTER_SYSTEM
 from schemas.models import RouterDecision
 from schemas.state import State
 from services.llm import gemini_llm
-from prompts.router import ROUTER_SYSTEM
 from services.time import (
     current_date,
     current_year,

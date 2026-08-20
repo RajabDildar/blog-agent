@@ -5,13 +5,13 @@ from services.cloudflare import (
 )
 from services.image_prompt import build_image_prompt
 from services.markdown import insert_image
+from services.run_diagnostics import (
+    get_current_diagnostics,
+)
 from services.run_paths import (
     markdown_image_path,
     published_image_path,
     staged_image_path,
-)
-from services.run_diagnostics import (
-    get_current_diagnostics,
 )
 
 

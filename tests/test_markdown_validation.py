@@ -1,6 +1,5 @@
 from services.markdown_validation import validate_article_markdown
 
-
 TITLE = "Test Article"
 SECTIONS = ["Introduction"]
 

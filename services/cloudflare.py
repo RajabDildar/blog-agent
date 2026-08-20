@@ -4,7 +4,6 @@ import time
 
 import requests
 
-
 MODEL = os.getenv(
     "CLOUDFLARE_IMAGE_MODEL",
     "@cf/black-forest-labs/flux-1-schnell",

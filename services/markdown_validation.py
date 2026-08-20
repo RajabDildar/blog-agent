@@ -6,7 +6,6 @@ from services.markdown_parser import (
     get_headings,
 )
 
-
 FORBIDDEN_MARKERS = {
     "[[IMAGE_": "Unresolved image placeholder.",
     "IMAGE GENERATION FAILED": "Image failure text leaked into output.",

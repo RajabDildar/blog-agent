@@ -3,7 +3,6 @@ from pathlib import Path
 
 from services.markdown import safe_stem
 
-
 RUNS_ROOT = Path("runs")
 PUBLISHED_IMAGES_ROOT = Path("images")
 

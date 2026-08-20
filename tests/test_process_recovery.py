@@ -2,7 +2,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 SCRIPT = r"""
 import os
 import sys

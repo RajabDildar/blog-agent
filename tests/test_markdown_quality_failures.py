@@ -1,7 +1,6 @@
-\
 import pytest
 
-import services.markdown_quality as markdown_quality
+from services import markdown_quality
 from services.markdown_quality import run_markdown_quality_gate
 
 

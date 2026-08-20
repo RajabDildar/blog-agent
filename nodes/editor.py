@@ -3,13 +3,13 @@ from langchain_core.messages import (
     SystemMessage,
 )
 
+from prompts.editor import EDITOR_SYSTEM
 from schemas.models import (
     EditorialReview,
     Plan,
 )
 from schemas.state import State
 from services.llm import gemini_llm
-from prompts.editor import EDITOR_SYSTEM
 from services.run_diagnostics import (
     get_current_diagnostics,
 )

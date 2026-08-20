@@ -10,7 +10,6 @@ from services.run_paths import (
     staged_image_path,
 )
 
-
 RUN_ID = "a" * 32
 
 

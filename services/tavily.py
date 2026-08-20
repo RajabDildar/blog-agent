@@ -2,7 +2,6 @@ import os
 
 from tavily import TavilyClient
 
-
 client = TavilyClient(api_key=os.environ["TAVILY_API_KEY"])
 
 

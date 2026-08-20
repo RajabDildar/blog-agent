@@ -16,13 +16,12 @@ from services.markdown_repair import (
 from services.markdown_validation import (
     validate_article_markdown,
 )
-from services.section_validation import (
-    validate_section_markdown,
-)
 from services.run_diagnostics import (
     RunDiagnostics,
 )
-
+from services.section_validation import (
+    validate_section_markdown,
+)
 
 Profile = Literal[
     "section",

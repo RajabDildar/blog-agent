@@ -1,10 +1,9 @@
 import groq
 import httpx
-
 from langgraph.graph import END, START, StateGraph
+from typing_extensions import TypedDict
 
 from config.settings import provider_retry_policy
-from typing_extensions import TypedDict
 
 
 class RetryState(TypedDict):

@@ -9,7 +9,6 @@ from services.run_paths import (
 )
 from services.storage import publish_blog
 
-
 RUN_ID = "e" * 32
 TITLE = "Storage Cleanup"
 

@@ -9,7 +9,6 @@ from services.run_paths import (
 )
 from services.storage import publish_blog
 
-
 RUN_ID = "c" * 32
 TITLE = "Run Isolation"
 

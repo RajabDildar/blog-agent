@@ -11,7 +11,6 @@ from schemas.models import (
     MarkdownRepairOutput,
 )
 
-
 RepairScope = Literal[
     "section",
     "article",

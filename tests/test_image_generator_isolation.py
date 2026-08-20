@@ -1,9 +1,8 @@
 from pathlib import Path
 
-import nodes.image_generator as image_generator
+from nodes import image_generator
 from nodes.image_generator import generate_images_node
 from schemas.models import Plan, Task
-
 
 RUN_ID = "b" * 32
 

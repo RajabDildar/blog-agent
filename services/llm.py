@@ -8,7 +8,6 @@ from config.settings import (
     rate_limiter,
 )
 
-
 writer_llm = ChatGroq(
     model=WRITER_MODEL,
     temperature=0.3,
