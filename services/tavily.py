@@ -5,6 +5,19 @@ from tavily import TavilyClient
 client = TavilyClient(api_key=os.environ["TAVILY_API_KEY"])
 
 
+def _normalize_result(
+    result: dict,
+) -> dict:
+    return {
+        **result,
+        "title": result.get("title") or "",
+        "url": result.get("url") or "",
+        "score": result.get("score") or 0,
+        "content": result.get("content") or "",
+        "raw_content": result.get("raw_content") or "",
+    }
+
+
 def tavily_search(
     query: str,
     *,
@@ -18,4 +31,6 @@ def tavily_search(
         include_answer=False,
     )
 
-    return response.get("results", [])
+    results = response.get("results") or []
+
+    return [_normalize_result(result) for result in results]

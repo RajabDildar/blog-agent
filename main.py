@@ -1,5 +1,9 @@
 import argparse
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from graph.main_graph import (
     generate_run_id,
     resume,

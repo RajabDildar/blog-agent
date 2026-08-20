@@ -5,7 +5,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Self
 
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.sqlite import SqliteSaver
+
+from schemas.models import (
+    EditorialIssue,
+    EditorialReview,
+    Plan,
+    ResearchEvidence,
+    SectionOutput,
+    Task,
+)
 
 PathLike = str | Path
 
@@ -60,7 +70,21 @@ def create_checkpointer(
         check_same_thread=False,
     )
 
-    saver = SqliteSaver(connection)
+    serde = JsonPlusSerializer(
+        allowed_msgpack_modules=[
+            ResearchEvidence,
+            Plan,
+            Task,
+            SectionOutput,
+            EditorialReview,
+            EditorialIssue,
+        ],
+    )
+
+    saver = SqliteSaver(
+        connection,
+        serde=serde,
+    )
 
     try:
         saver.setup()

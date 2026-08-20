@@ -44,26 +44,11 @@ def research_node(
     for result in unique.values():
         compact_results.append(
             {
-                "title": result.get(
-                    "title",
-                    "",
-                ),
-                "url": result.get(
-                    "url",
-                    "",
-                ),
-                "score": result.get(
-                    "score",
-                    0,
-                ),
-                "content": result.get(
-                    "content",
-                    "",
-                )[:2000],
-                "raw_content": result.get(
-                    "raw_content",
-                    "",
-                )[:2500],
+                "title": result["title"],
+                "url": result["url"],
+                "score": result["score"],
+                "content": result["content"][:2000],
+                "raw_content": result["raw_content"][:2500],
             }
         )
 
