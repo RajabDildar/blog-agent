@@ -195,7 +195,9 @@ def test_resume_preserves_successful_parallel_sibling(
 
                 assert completed
 
-                raise RuntimeError("parallel worker failed")
+                raise RuntimeError(
+                    "parallel worker failed",
+                )
 
             return {
                 "results": {
@@ -285,6 +287,455 @@ def test_resume_preserves_successful_parallel_sibling(
         )
 
         assert completed_state.next == ()
+
+    finally:
+        handle.close()
+
+
+def test_resume_retries_failed_editor_without_rerunning_merge(
+    tmp_path,
+):
+    handle = create_checkpointer(
+        tmp_path / "checkpoints.sqlite",
+    )
+
+    try:
+        calls = {
+            "merge": 0,
+            "editor": 0,
+            "article_validator": 0,
+        }
+
+        def merge(
+            state: RecoveryState,
+        ):
+            calls["merge"] += 1
+
+            return {
+                "results": {
+                    "merge": "complete",
+                },
+            }
+
+        def editor(
+            state: RecoveryState,
+        ):
+            calls["editor"] += 1
+
+            if calls["editor"] == 1:
+                raise RuntimeError("editor failed")
+
+            return {
+                "results": {
+                    "editor": "complete",
+                },
+            }
+
+        def article_validator(
+            state: RecoveryState,
+        ):
+            calls["article_validator"] += 1
+
+            return {
+                "results": {
+                    "article_validator": "complete",
+                },
+            }
+
+        builder = StateGraph(
+            RecoveryState,
+        )
+
+        builder.add_node(
+            "merge",
+            merge,
+        )
+
+        builder.add_node(
+            "editor",
+            editor,
+        )
+
+        builder.add_node(
+            "article_validator",
+            article_validator,
+        )
+
+        builder.add_edge(
+            START,
+            "merge",
+        )
+
+        builder.add_edge(
+            "merge",
+            "editor",
+        )
+
+        builder.add_edge(
+            "editor",
+            "article_validator",
+        )
+
+        builder.add_edge(
+            "article_validator",
+            END,
+        )
+
+        app = builder.compile(
+            checkpointer=handle.saver,
+        )
+
+        config = {
+            "configurable": {
+                "thread_id": "editor-recovery",
+            },
+        }
+
+        with pytest.raises(
+            RuntimeError,
+            match="editor failed",
+        ):
+            app.invoke(
+                {
+                    "results": {},
+                },
+                config,
+                durability="sync",
+            )
+
+        assert calls == {
+            "merge": 1,
+            "editor": 1,
+            "article_validator": 0,
+        }
+
+        failed_state = app.get_state(
+            config,
+        )
+
+        assert failed_state.values["results"] == {
+            "merge": "complete",
+        }
+
+        assert failed_state.next == ("editor",)
+
+        result = app.invoke(
+            None,
+            config,
+            durability="sync",
+        )
+
+        assert result["results"] == {
+            "merge": "complete",
+            "editor": "complete",
+            "article_validator": "complete",
+        }
+
+        assert calls == {
+            "merge": 1,
+            "editor": 2,
+            "article_validator": 1,
+        }
+
+    finally:
+        handle.close()
+
+
+def test_resume_retries_failed_article_repair_without_rerunning_validator(
+    tmp_path,
+):
+    handle = create_checkpointer(
+        tmp_path / "checkpoints.sqlite",
+    )
+
+    try:
+        calls = {
+            "article_validator": 0,
+            "repair": 0,
+            "image_planner": 0,
+        }
+
+        def article_validator(
+            state: RecoveryState,
+        ):
+            calls["article_validator"] += 1
+
+            return {
+                "results": {
+                    "article_validator": "needs_repair",
+                },
+            }
+
+        def repair(
+            state: RecoveryState,
+        ):
+            calls["repair"] += 1
+
+            if calls["repair"] == 1:
+                raise RuntimeError("article repair failed")
+
+            return {
+                "results": {
+                    "repair": "complete",
+                },
+            }
+
+        def image_planner(
+            state: RecoveryState,
+        ):
+            calls["image_planner"] += 1
+
+            return {
+                "results": {
+                    "image_planner": "complete",
+                },
+            }
+
+        builder = StateGraph(
+            RecoveryState,
+        )
+
+        builder.add_node(
+            "article_validator",
+            article_validator,
+        )
+
+        builder.add_node(
+            "repair",
+            repair,
+        )
+
+        builder.add_node(
+            "image_planner",
+            image_planner,
+        )
+
+        builder.add_edge(
+            START,
+            "article_validator",
+        )
+
+        builder.add_edge(
+            "article_validator",
+            "repair",
+        )
+
+        builder.add_edge(
+            "repair",
+            "image_planner",
+        )
+
+        builder.add_edge(
+            "image_planner",
+            END,
+        )
+
+        app = builder.compile(
+            checkpointer=handle.saver,
+        )
+
+        config = {
+            "configurable": {
+                "thread_id": "article-repair-recovery",
+            },
+        }
+
+        with pytest.raises(
+            RuntimeError,
+            match="article repair failed",
+        ):
+            app.invoke(
+                {
+                    "results": {},
+                },
+                config,
+                durability="sync",
+            )
+
+        assert calls == {
+            "article_validator": 1,
+            "repair": 1,
+            "image_planner": 0,
+        }
+
+        failed_state = app.get_state(
+            config,
+        )
+
+        assert failed_state.values["results"] == {
+            "article_validator": "needs_repair",
+        }
+
+        assert failed_state.next == ("repair",)
+
+        result = app.invoke(
+            None,
+            config,
+            durability="sync",
+        )
+
+        assert result["results"] == {
+            "article_validator": "needs_repair",
+            "repair": "complete",
+            "image_planner": "complete",
+        }
+
+        assert calls == {
+            "article_validator": 1,
+            "repair": 2,
+            "image_planner": 1,
+        }
+
+    finally:
+        handle.close()
+
+
+def test_resume_retries_failed_image_generation_without_rerunning_planner(
+    tmp_path,
+):
+    handle = create_checkpointer(
+        tmp_path / "checkpoints.sqlite",
+    )
+
+    try:
+        calls = {
+            "image_planner": 0,
+            "image_generator": 0,
+            "validator": 0,
+        }
+
+        def image_planner(
+            state: RecoveryState,
+        ):
+            calls["image_planner"] += 1
+
+            return {
+                "results": {
+                    "image_planner": "complete",
+                },
+            }
+
+        def image_generator(
+            state: RecoveryState,
+        ):
+            calls["image_generator"] += 1
+
+            if calls["image_generator"] == 1:
+                raise RuntimeError(
+                    "image generation failed",
+                )
+
+            return {
+                "results": {
+                    "image_generator": "complete",
+                },
+            }
+
+        def validator(
+            state: RecoveryState,
+        ):
+            calls["validator"] += 1
+
+            return {
+                "results": {
+                    "validator": "complete",
+                },
+            }
+
+        builder = StateGraph(
+            RecoveryState,
+        )
+
+        builder.add_node(
+            "image_planner",
+            image_planner,
+        )
+
+        builder.add_node(
+            "image_generator",
+            image_generator,
+        )
+
+        builder.add_node(
+            "validator",
+            validator,
+        )
+
+        builder.add_edge(
+            START,
+            "image_planner",
+        )
+
+        builder.add_edge(
+            "image_planner",
+            "image_generator",
+        )
+
+        builder.add_edge(
+            "image_generator",
+            "validator",
+        )
+
+        builder.add_edge(
+            "validator",
+            END,
+        )
+
+        app = builder.compile(
+            checkpointer=handle.saver,
+        )
+
+        config = {
+            "configurable": {
+                "thread_id": "image-generation-recovery",
+            },
+        }
+
+        with pytest.raises(
+            RuntimeError,
+            match="image generation failed",
+        ):
+            app.invoke(
+                {
+                    "results": {},
+                },
+                config,
+                durability="sync",
+            )
+
+        assert calls == {
+            "image_planner": 1,
+            "image_generator": 1,
+            "validator": 0,
+        }
+
+        failed_state = app.get_state(
+            config,
+        )
+
+        assert failed_state.values["results"] == {
+            "image_planner": "complete",
+        }
+
+        assert failed_state.next == ("image_generator",)
+
+        result = app.invoke(
+            None,
+            config,
+            durability="sync",
+        )
+
+        assert result["results"] == {
+            "image_planner": "complete",
+            "image_generator": "complete",
+            "validator": "complete",
+        }
+
+        assert calls == {
+            "image_planner": 1,
+            "image_generator": 2,
+            "validator": 1,
+        }
 
     finally:
         handle.close()
