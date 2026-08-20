@@ -241,6 +241,114 @@ class RunDiagnostics:
                 errors=list(errors),
             )
 
+    @classmethod
+    def from_dict(
+        cls,
+        data: dict[str, Any],
+    ) -> RunDiagnostics:
+        diagnostics = cls(
+            run_id=data["run_id"],
+            topic=data.get("topic", ""),
+        )
+
+        diagnostics.started_at = data.get(
+            "started_at",
+            diagnostics.started_at,
+        )
+
+        diagnostics.status = data.get(
+            "status",
+            "running",
+        )
+
+        diagnostics.current_stage = data.get(
+            "current_stage",
+            "",
+        )
+
+        diagnostics.current_provider = data.get(
+            "current_provider",
+        )
+
+        diagnostics.retry_count = data.get(
+            "retry_count",
+            0,
+        )
+
+        diagnostics.provider_attempts.update(
+            data.get(
+                "provider_attempts",
+                {},
+            )
+        )
+
+        markdown = data.get(
+            "markdown",
+            {},
+        )
+
+        diagnostics.markdown_deterministic_repairs = markdown.get(
+            "deterministic_repairs",
+            0,
+        )
+
+        diagnostics.markdown_llm_repairs = markdown.get(
+            "llm_repairs",
+            0,
+        )
+
+        diagnostics.editorial_reviews = data.get(
+            "editorial_reviews",
+            0,
+        )
+
+        diagnostics.editorial_revisions = data.get(
+            "editorial_revisions",
+            0,
+        )
+
+        diagnostics.image_attempts = data.get(
+            "image_attempts",
+            0,
+        )
+
+        diagnostics.image_ids = list(
+            data.get(
+                "image_ids",
+                [],
+            )
+        )
+
+        diagnostics.final_validation_failures = data.get(
+            "final_validation_failures",
+            0,
+        )
+
+        diagnostics.failure = data.get(
+            "failure",
+        )
+
+        diagnostics.events = list(
+            data.get(
+                "events",
+                [],
+            )
+        )
+
+        return diagnostics
+
+    def record_resume(self) -> None:
+        with self._lock:
+            previous_failure = self.failure
+
+            self.status = "running"
+            self.failure = None
+
+            self._record_event(
+                event="run_resumed",
+                previous_failure=previous_failure,
+            )
+
     def finish_success(
         self,
         result: dict,

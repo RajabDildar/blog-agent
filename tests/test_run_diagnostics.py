@@ -39,9 +39,7 @@ def test_diagnostics_records_success(tmp_path, monkeypatch):
     diagnostics.finish_success(result)
 
     data = json.loads(
-        Path("runs", "a" * 32, "diagnostics.json").read_text(
-            encoding="utf-8"
-        )
+        Path("runs", "a" * 32, "diagnostics.json").read_text(encoding="utf-8")
     )
 
     assert result == {"ok": True}
@@ -49,8 +47,7 @@ def test_diagnostics_records_success(tmp_path, monkeypatch):
     assert data["current_stage"] == "router"
     assert data["provider_attempts"]["gemini"] == 1
     assert any(
-        event["event"] == "node_succeeded"
-        and event["node"] == "router"
+        event["event"] == "node_succeeded" and event["node"] == "router"
         for event in data["events"]
     )
 
@@ -85,9 +82,7 @@ def test_diagnostics_records_retry_attempt(tmp_path, monkeypatch):
     diagnostics.finish_failure(RuntimeError("provider exhausted"))
 
     data = json.loads(
-        Path("runs", "b" * 32, "diagnostics.json").read_text(
-            encoding="utf-8"
-        )
+        Path("runs", "b" * 32, "diagnostics.json").read_text(encoding="utf-8")
     )
 
     assert attempts == 3
@@ -120,9 +115,7 @@ def test_diagnostics_records_domain_metrics(tmp_path, monkeypatch):
     diagnostics.record_revision()
     diagnostics.record_image_attempt("img-1")
     diagnostics.record_image_attempt("img-2")
-    diagnostics.record_final_validation(
-        ["missing image", "duplicate image"]
-    )
+    diagnostics.record_final_validation(["missing image", "duplicate image"])
 
     diagnostics.finish_success(
         {
@@ -137,9 +130,7 @@ def test_diagnostics_records_domain_metrics(tmp_path, monkeypatch):
     )
 
     data = json.loads(
-        Path("runs", "c" * 32, "diagnostics.json").read_text(
-            encoding="utf-8"
-        )
+        Path("runs", "c" * 32, "diagnostics.json").read_text(encoding="utf-8")
     )
 
     assert data["markdown"]["deterministic_repairs"] == 2
@@ -165,10 +156,93 @@ def test_diagnostics_are_isolated_by_run_id(tmp_path, monkeypatch):
     first.finish_success({})
     second.finish_success({})
 
-    assert Path(
-        "runs", "d" * 32, "diagnostics.json"
-    ).is_file()
+    assert Path("runs", "d" * 32, "diagnostics.json").is_file()
 
-    assert Path(
-        "runs", "e" * 32, "diagnostics.json"
-    ).is_file()
+    assert Path("runs", "e" * 32, "diagnostics.json").is_file()
+
+
+def test_from_dict_preserves_existing_diagnostics_history():
+    original = RunDiagnostics(
+        run_id="resume-diagnostics",
+        topic="Persistent diagnostics",
+    )
+
+    original.started_at = 1234.5
+    original.retry_count = 3
+    original.provider_attempts["groq"] = 4
+    original.editorial_revisions = 2
+
+    original._record_event(
+        event="node_started",
+        node="worker",
+        provider="groq",
+        attempt=1,
+    )
+
+    original.failure = {
+        "node": "worker",
+        "provider": "groq",
+        "attempt": 4,
+        "exception_type": "RuntimeError",
+        "message": "provider failed",
+        "timestamp": 1235.0,
+    }
+
+    restored = RunDiagnostics.from_dict(
+        original._snapshot(),
+    )
+
+    assert restored.run_id == original.run_id
+    assert restored.topic == original.topic
+    assert restored.started_at == 1234.5
+    assert restored.retry_count == 3
+    assert restored.provider_attempts["groq"] == 4
+    assert restored.editorial_revisions == 2
+    assert restored.events == original.events
+    assert restored.failure == original.failure
+
+
+def test_record_resume_preserves_history_and_clears_active_failure():
+    diagnostics = RunDiagnostics(
+        run_id="resume-diagnostics",
+        topic="Persistent diagnostics",
+    )
+
+    original_started_at = diagnostics.started_at
+
+    failure = {
+        "node": "worker",
+        "provider": "groq",
+        "attempt": 4,
+        "exception_type": "RuntimeError",
+        "message": "provider failed",
+        "timestamp": 1235.0,
+    }
+
+    diagnostics.retry_count = 3
+    diagnostics.provider_attempts["groq"] = 4
+    diagnostics.failure = failure
+
+    diagnostics._record_event(
+        event="run_finished",
+        status="failed",
+    )
+
+    previous_event_count = len(
+        diagnostics.events,
+    )
+
+    diagnostics.record_resume()
+
+    assert diagnostics.run_id == "resume-diagnostics"
+    assert diagnostics.started_at == original_started_at
+    assert diagnostics.status == "running"
+    assert diagnostics.failure is None
+    assert diagnostics.retry_count == 3
+    assert diagnostics.provider_attempts["groq"] == 4
+    assert len(diagnostics.events) == (previous_event_count + 1)
+
+    resume_event = diagnostics.events[-1]
+
+    assert resume_event["event"] == "run_resumed"
+    assert resume_event["previous_failure"] == failure

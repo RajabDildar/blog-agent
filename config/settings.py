@@ -123,5 +123,10 @@ GEMINI_MODEL = os.getenv(
     "gemini-3.1-flash-lite",
 )
 
+CHECKPOINT_SQLITE_PATH = os.getenv(
+    "CHECKPOINT_SQLITE_PATH",
+    "runs/checkpoints.sqlite",
+)
+
 MAX_EDITORIAL_REVISIONS = 1
 MAX_ARTICLE_REPAIRS = 1

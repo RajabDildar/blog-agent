@@ -1,14 +1,16 @@
-from typing import Literal
 from uuid import uuid4
 
+from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
 from config.settings import (
+    CHECKPOINT_SQLITE_PATH,
     provider_retry_policy,
     MAX_EDITORIAL_REVISIONS,
     MAX_ARTICLE_REPAIRS,
 )
+
 from nodes.editor import editor_node
 from nodes.image_generator import generate_images_node
 from nodes.image_planner import image_planner_node
@@ -28,10 +30,14 @@ from nodes.article_validator import (
 from schemas.context import RunContext
 from services.run_diagnostics import (
     RunDiagnostics,
-    instrument_node,
-)
-from services.run_diagnostics import (
+    format_cli_summary,
     get_current_diagnostics,
+    instrument_node,
+    load_diagnostics,
+)
+from services.checkpointer import (
+    CheckpointerHandle,
+    create_checkpointer,
 )
 
 
@@ -83,6 +89,27 @@ def fanout(state: State):
 
 def generate_run_id() -> str:
     return uuid4().hex
+
+
+def _thread_config(
+    run_id: str,
+) -> dict:
+    return {
+        "configurable": {
+            "thread_id": run_id,
+        },
+    }
+
+
+def _thread_exists(
+    run_id: str,
+) -> bool:
+    return (
+        _checkpointer_handle.saver.get_tuple(
+            _thread_config(run_id),
+        )
+        is not None
+    )
 
 
 def route_after_merge(state: State):
@@ -219,7 +246,9 @@ def final_validation_failure_node(
 # Building graph
 
 
-def build_graph():
+def build_graph(
+    checkpointer: SqliteSaver,
+):
     builder = StateGraph(
         State,
         context_schema=RunContext,
@@ -476,10 +505,18 @@ def build_graph():
         END,
     )
 
-    return builder.compile()
+    return builder.compile(
+        checkpointer=checkpointer,
+    )
 
 
-app = build_graph()
+_checkpointer_handle: CheckpointerHandle = create_checkpointer(
+    CHECKPOINT_SQLITE_PATH,
+)
+
+app = build_graph(
+    _checkpointer_handle.saver,
+)
 
 
 def run(
@@ -489,6 +526,12 @@ def run(
 ):
     if run_id is None:
         run_id = generate_run_id()
+
+    if _thread_exists(run_id):
+        raise ValueError(
+            f"Run ID already exists: {run_id}. "
+            "Use resume(run_id) to continue an existing run."
+        )
 
     diagnostics = RunDiagnostics(
         run_id=run_id,
@@ -527,6 +570,7 @@ def run(
             },
             {
                 "recursion_limit": 50,
+                **_thread_config(run_id),
             },
             context=context,
         )
@@ -536,5 +580,73 @@ def run(
         raise
 
     diagnostics.finish_success(result)
+
+    return result
+
+
+def resume(
+    run_id: str,
+):
+    config = {
+        **_thread_config(run_id),
+        "recursion_limit": 50,
+    }
+
+    checkpoint = _checkpointer_handle.saver.get_tuple(
+        _thread_config(run_id),
+    )
+
+    if checkpoint is None:
+        raise ValueError(f"Unknown run ID: {run_id}")
+
+    state = app.get_state(
+        _thread_config(run_id),
+    )
+
+    if state.next == ():
+        raise ValueError(f"Run {run_id} has already completed successfully.")
+
+    diagnostics_data = load_diagnostics(
+        run_id,
+    )
+
+    if diagnostics_data:
+        diagnostics = RunDiagnostics.from_dict(
+            diagnostics_data,
+        )
+    else:
+        topic = state.values.get(
+            "topic",
+            "",
+        )
+
+        diagnostics = RunDiagnostics(
+            run_id=run_id,
+            topic=topic,
+        )
+
+    diagnostics.record_resume()
+
+    context = {
+        "diagnostics": diagnostics,
+    }
+
+    try:
+        result = app.invoke(
+            None,
+            config,
+            context=context,
+            durability="sync",
+        )
+
+    except Exception as exc:
+        diagnostics.finish_failure(
+            exc,
+        )
+        raise
+
+    diagnostics.finish_success(
+        result,
+    )
 
     return result
