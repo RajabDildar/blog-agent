@@ -123,6 +123,11 @@ GEMINI_MODEL = os.getenv(
     "gemini-3.1-flash-lite",
 )
 
+EVAL_JUDGE_MODEL = os.getenv(
+    "EVAL_JUDGE_MODEL",
+    "gemini-3.1-flash-lite",
+)
+
 CHECKPOINT_SQLITE_PATH = os.getenv(
     "CHECKPOINT_SQLITE_PATH",
     "runs/checkpoints.sqlite",
