@@ -1,6 +1,9 @@
 import argparse
+from datetime import UTC, datetime
 
 from dotenv import load_dotenv
+
+from services.rate_limits import RateLimitRetryExhausted
 
 load_dotenv()
 
@@ -52,8 +55,25 @@ def report_failure(
     exc: Exception,
     run_id: str,
 ):
-    print("\nBlog generation failed.")
-    print(f"Error: {exc}")
+    if isinstance(exc, RateLimitRetryExhausted):
+        print("\nBlog generation paused by provider rate limit.")
+        print(f"Run ID: {exc.run_id or run_id}")
+
+        if exc.resume_after is not None:
+            resume_at = datetime.fromtimestamp(
+                exc.resume_after,
+                tz=UTC,
+            ).isoformat()
+            print(f"Resume after (UTC): {resume_at}")
+        else:
+            print(
+                "The provider did not supply a retry/reset time. "
+                "Check diagnostics before resuming."
+            )
+
+    else:
+        print("\nBlog generation failed.")
+        print(f"Error: {exc}")
 
     diagnostics = load_diagnostics(run_id)
 

@@ -27,8 +27,13 @@ class RateLimitRetryExhausted(RuntimeError):
     def __init__(
         self,
         info: RateLimitInfo,
+        *,
+        run_id: str | None = None,
+        resume_after: float | None = None,
     ) -> None:
         self.rate_limit_info = info
+        self.run_id = run_id
+        self.resume_after = resume_after
 
         delay = get_provider_retry_delay_seconds(info)
 

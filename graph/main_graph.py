@@ -1,3 +1,4 @@
+import time
 from uuid import uuid4
 
 from langgraph.checkpoint.sqlite import SqliteSaver
@@ -30,6 +31,10 @@ from schemas.state import State
 from services.checkpointer import (
     CheckpointerHandle,
     create_checkpointer,
+)
+from services.rate_limits import (
+    RateLimitRetryExhausted,
+    get_provider_retry_delay_seconds,
 )
 from services.run_diagnostics import (
     RunDiagnostics,
@@ -517,6 +522,28 @@ app = build_graph(
 )
 
 
+def _pause_rate_limited_run(
+    *,
+    run_id: str,
+    diagnostics: RunDiagnostics,
+    exc: RateLimitRetryExhausted,
+) -> None:
+    delay = get_provider_retry_delay_seconds(
+        exc.rate_limit_info,
+    )
+
+    resume_after = time.time() + delay if delay is not None else None
+
+    exc.run_id = run_id
+    exc.resume_after = resume_after
+
+    diagnostics.pause_rate_limit(
+        info=exc.rate_limit_info,
+        resume_after=resume_after,
+        exc=exc,
+    )
+
+
 def run(
     topic: str,
     *,
@@ -573,6 +600,14 @@ def run(
             context=context,
         )
 
+    except RateLimitRetryExhausted as exc:
+        _pause_rate_limited_run(
+            run_id=run_id,
+            diagnostics=diagnostics,
+            exc=exc,
+        )
+        raise
+
     except Exception as exc:
         diagnostics.finish_failure(exc)
         raise
@@ -623,6 +658,15 @@ def resume(
             topic=topic,
         )
 
+    if diagnostics.status == "paused_rate_limit":
+        resume_after = diagnostics.resume_after
+
+        if resume_after is not None and time.time() < resume_after:
+            raise ValueError(
+                f"Run {run_id} is paused by provider rate limiting "
+                f"until {resume_after:.3f}."
+            )
+
     diagnostics.record_resume()
 
     context = {
@@ -636,6 +680,14 @@ def resume(
             context=context,
             durability="sync",
         )
+
+    except RateLimitRetryExhausted as exc:
+        _pause_rate_limited_run(
+            run_id=run_id,
+            diagnostics=diagnostics,
+            exc=exc,
+        )
+        raise
 
     except Exception as exc:
         diagnostics.finish_failure(

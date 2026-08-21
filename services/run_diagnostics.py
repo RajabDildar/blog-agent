@@ -33,6 +33,8 @@ class RunDiagnostics:
 
         self.status = "running"
 
+        self.resume_after: float | None = None
+
         self.current_stage = ""
         self.current_provider: str | None = None
 
@@ -66,6 +68,7 @@ class RunDiagnostics:
             "run_id": self.run_id,
             "topic": self.topic,
             "status": self.status,
+            "resume_after": self.resume_after,
             "started_at": self.started_at,
             "finished_at": (time.time() if self.status != "running" else None),
             "duration_seconds": round(
@@ -297,6 +300,10 @@ class RunDiagnostics:
             "running",
         )
 
+        diagnostics.resume_after = data.get(
+            "resume_after",
+        )
+
         diagnostics.current_stage = data.get(
             "current_stage",
             "",
@@ -373,11 +380,46 @@ class RunDiagnostics:
 
         return diagnostics
 
+    def pause_rate_limit(
+        self,
+        *,
+        info: RateLimitInfo,
+        resume_after: float | None,
+        exc: Exception,
+    ) -> None:
+        with self._lock:
+            self.status = "paused_rate_limit"
+            self.resume_after = resume_after
+
+            if self.failure is None:
+                cause = exc.__cause__ or exc
+                self.failure = {
+                    "node": self.current_stage or None,
+                    "provider": self.current_provider or info.provider,
+                    "attempt": None,
+                    "exception_type": type(cause).__name__,
+                    "message": str(cause),
+                    "timestamp": time.time(),
+                }
+
+            self._record_event(
+                event="run_paused",
+                status="paused_rate_limit",
+                resume_after=resume_after,
+                provider=info.provider,
+                status_code=info.status_code,
+                retry_after_seconds=info.retry_after_seconds,
+                reset_tokens_seconds=info.reset_tokens_seconds,
+                remaining_tokens=info.remaining_tokens,
+                limit_tokens=info.limit_tokens,
+            )
+
     def record_resume(self) -> None:
         with self._lock:
             previous_failure = self.failure
 
             self.status = "running"
+            self.resume_after = None
             self.failure = None
 
             self._record_event(
@@ -391,6 +433,7 @@ class RunDiagnostics:
     ) -> None:
         with self._lock:
             self.status = "success"
+            self.resume_after = None
 
             self._record_event(
                 event="run_finished",
@@ -403,6 +446,7 @@ class RunDiagnostics:
     ) -> None:
         with self._lock:
             self.status = "failed"
+            self.resume_after = None
 
             if self.failure is None:
                 self.failure = {
@@ -449,8 +493,16 @@ def format_cli_summary(
         "unknown",
     )
 
-    stage = data.get("current_stage") or "unknown"
+    status = data.get(
+        "status",
+        "unknown",
+    )
 
+    resume_after = data.get(
+        "resume_after",
+    )
+
+    stage = data.get("current_stage") or "unknown"
     provider = data.get("current_provider") or "none"
 
     retry_count = data.get(
@@ -477,10 +529,12 @@ def format_cli_summary(
     return "\n".join(
         [
             f"Run ID: {run_id}",
+            f"Status: {status}",
             f"Stage: {stage}",
             f"Provider: {provider}",
             f"Attempts: {attempts}",
             f"Retries: {retry_count}",
+            f"Resume after: {resume_after}",
             f"Failure: {exception_type}",
             f"Message: {message}",
             (f"Diagnostics: {diagnostics_path(run_id)}"),

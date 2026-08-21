@@ -507,3 +507,71 @@ def test_instrument_node_does_not_sleep_on_final_rate_limit_attempt(
         raise AssertionError("Expected RateLimitRetryExhausted")
 
     assert slept == []
+
+
+def test_rate_limit_pause_persists_resume_after_and_resume_clears_it(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.chdir(tmp_path)
+
+    diagnostics = RunDiagnostics(
+        run_id="pause-diagnostics",
+        topic="Rate limit pause",
+    )
+
+    info = RateLimitInfo(
+        provider="groq",
+        status_code=429,
+        retry_after_seconds=30.0,
+        reset_tokens_seconds=45.0,
+        remaining_tokens=0,
+        limit_tokens=8000,
+    )
+
+    original_error = RuntimeError("provider 429")
+    pause_error = RateLimitRetryExhausted(info)
+
+    try:
+        raise pause_error from original_error
+    except RateLimitRetryExhausted as exc:
+        diagnostics.pause_rate_limit(
+            info=info,
+            resume_after=1234.5,
+            exc=exc,
+        )
+
+    data = json.loads(
+        Path(
+            "runs",
+            "pause-diagnostics",
+            "diagnostics.json",
+        ).read_text(
+            encoding="utf-8",
+        )
+    )
+
+    assert data["status"] == "paused_rate_limit"
+    assert data["resume_after"] == 1234.5
+    assert data["failure"]["exception_type"] == "RuntimeError"
+
+    pause_events = [event for event in data["events"] if event["event"] == "run_paused"]
+
+    assert len(pause_events) == 1
+    assert pause_events[0]["resume_after"] == 1234.5
+    assert pause_events[0]["provider"] == "groq"
+    assert pause_events[0]["status_code"] == 429
+
+    restored = RunDiagnostics.from_dict(data)
+
+    assert restored.status == "paused_rate_limit"
+    assert restored.resume_after == 1234.5
+
+    started_at = restored.started_at
+
+    restored.record_resume()
+
+    assert restored.status == "running"
+    assert restored.resume_after is None
+    assert restored.started_at == started_at
+    assert restored.events[-1]["event"] == "run_resumed"
