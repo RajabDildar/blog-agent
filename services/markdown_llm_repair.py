@@ -6,9 +6,15 @@ from langchain_core.messages import (
     SystemMessage,
 )
 
+from config.settings import (
+    groq_admission_controller,
+)
 from prompts.repair import REPAIR_SYSTEM
 from schemas.models import (
     MarkdownRepairOutput,
+)
+from services.groq_admission import (
+    invoke_with_groq_admission,
 )
 
 RepairScope = Literal[
@@ -28,8 +34,10 @@ def repair_markdown_with_llm(
 ) -> str:
     repairer = llm.with_structured_output(MarkdownRepairOutput)
 
-    result = repairer.invoke(
-        [
+    result = invoke_with_groq_admission(
+        controller=groq_admission_controller,
+        runnable=repairer,
+        input=[
             SystemMessage(content=REPAIR_SYSTEM),
             HumanMessage(
                 content=(
@@ -46,7 +54,7 @@ def repair_markdown_with_llm(
                     f"{markdown}"
                 )
             ),
-        ]
+        ],
     )
 
     repaired = result.markdown.strip()

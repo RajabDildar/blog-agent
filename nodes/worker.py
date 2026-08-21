@@ -1,11 +1,17 @@
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from config.settings import (
+    groq_admission_controller,
+)
 from prompts.writer import WORKER_SYSTEM
 from schemas.models import (
     Plan,
     ResearchEvidence,
     SectionOutput,
     Task,
+)
+from services.groq_admission import (
+    invoke_with_groq_admission,
 )
 from services.llm import writer_llm
 from services.markdown_llm_repair import (
@@ -45,11 +51,15 @@ def worker_node(payload: dict) -> dict:
         "",
     )
 
-    result = writer_llm.with_structured_output(
+    writer = writer_llm.with_structured_output(
         SectionOutput,
         method="json_mode",
-    ).invoke(
-        [
+    )
+
+    result = invoke_with_groq_admission(
+        controller=groq_admission_controller,
+        runnable=writer,
+        input=[
             SystemMessage(content=WORKER_SYSTEM),
             HumanMessage(
                 content=(
@@ -71,7 +81,7 @@ def worker_node(payload: dict) -> dict:
                     f"{evidence_text}"
                 )
             ),
-        ]
+        ],
     )
 
     markdown = result.body_markdown.strip()

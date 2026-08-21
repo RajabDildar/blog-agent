@@ -7,6 +7,9 @@ from google.genai import errors as genai_errors
 from langchain_core.rate_limiters import InMemoryRateLimiter
 from langgraph.types import RetryPolicy
 
+from services.groq_admission import (
+    GroqAdmissionController,
+)
 from services.rate_limits import (
     extract_rate_limit_info,
     get_provider_retry_delay_seconds,
@@ -23,12 +26,47 @@ RATE_LIMIT_SHORT_WAIT_SECONDS = float(
     )
 )
 
+GROQ_MAX_CONCURRENT_GENERATIONS = int(
+    os.getenv(
+        "GROQ_MAX_CONCURRENT_GENERATIONS",
+        "2",
+    )
+)
+
+GROQ_TOKEN_BUDGET_PER_MINUTE = int(
+    os.getenv(
+        "GROQ_TOKEN_BUDGET_PER_MINUTE",
+        "8000",
+    )
+)
+
+GROQ_TOKEN_BUDGET_SAFETY_MARGIN = float(
+    os.getenv(
+        "GROQ_TOKEN_BUDGET_SAFETY_MARGIN",
+        "0.25",
+    )
+)
+
+GROQ_TOKEN_RESERVATION_PER_GENERATION = int(
+    os.getenv(
+        "GROQ_TOKEN_RESERVATION_PER_GENERATION",
+        "1500",
+    )
+)
+
 PROVIDER_RETRY_MAX_ATTEMPTS = 4
 
 rate_limiter = InMemoryRateLimiter(
     requests_per_second=0.33,
     check_every_n_seconds=0.1,
     max_bucket_size=2,
+)
+
+groq_admission_controller = GroqAdmissionController(
+    max_concurrent_generations=(GROQ_MAX_CONCURRENT_GENERATIONS),
+    token_budget_per_minute=(GROQ_TOKEN_BUDGET_PER_MINUTE),
+    token_budget_safety_margin=(GROQ_TOKEN_BUDGET_SAFETY_MARGIN),
+    reservation_tokens=(GROQ_TOKEN_RESERVATION_PER_GENERATION),
 )
 
 

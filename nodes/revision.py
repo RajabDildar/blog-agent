@@ -3,11 +3,17 @@ from langchain_core.messages import (
     SystemMessage,
 )
 
+from config.settings import (
+    groq_admission_controller,
+)
 from prompts.revision import REVISION_SYSTEM
 from schemas.models import (
     EditorialIssue,
     SectionOutput,
     Task,
+)
+from services.groq_admission import (
+    invoke_with_groq_admission,
 )
 from services.llm import revision_llm
 from services.markdown_llm_repair import (
@@ -28,11 +34,15 @@ def revision_node(
 
     issues = [EditorialIssue(**issue) for issue in payload["issues"]]
 
-    result = revision_llm.with_structured_output(
+    reviser = revision_llm.with_structured_output(
         SectionOutput,
         method="json_mode",
-    ).invoke(
-        [
+    )
+
+    result = invoke_with_groq_admission(
+        controller=groq_admission_controller,
+        runnable=reviser,
+        input=[
             SystemMessage(content=REVISION_SYSTEM),
             HumanMessage(
                 content=(
@@ -44,7 +54,7 @@ def revision_node(
                     f"{[i.model_dump() for i in issues]}"
                 )
             ),
-        ]
+        ],
     )
 
     markdown = result.body_markdown.strip()
