@@ -2,7 +2,10 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
-from services.rate_limits import RateLimitInfo
+from services.rate_limits import (
+    RateLimitInfo,
+    RateLimitRetryExhausted,
+)
 from services.run_diagnostics import (
     RunDiagnostics,
     instrument_node,
@@ -308,6 +311,13 @@ def test_instrument_node_records_groq_rate_limit_event(
 ):
     monkeypatch.chdir(tmp_path)
 
+    slept = []
+
+    monkeypatch.setattr(
+        "services.run_diagnostics.time.sleep",
+        lambda seconds: slept.append(seconds),
+    )
+
     diagnostics = RunDiagnostics(
         run_id="g" * 32,
         topic="Rate limit instrumentation",
@@ -375,3 +385,125 @@ def test_instrument_node_records_groq_rate_limit_event(
     assert event["reset_tokens_seconds"] == 9.5
     assert event["remaining_tokens"] == 0
     assert event["limit_tokens"] == 8000
+    assert slept == [3.0]
+
+
+def test_instrument_node_stops_long_groq_rate_limit_retry(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.chdir(tmp_path)
+
+    slept = []
+
+    monkeypatch.setattr(
+        "services.run_diagnostics.time.sleep",
+        lambda seconds: slept.append(seconds),
+    )
+
+    diagnostics = RunDiagnostics(
+        run_id="h" * 32,
+        topic="Long rate limit",
+    )
+
+    class FakeRateLimitError(Exception):
+        status_code = 429
+
+        def __init__(self):
+            self.response = SimpleNamespace(
+                headers={
+                    "retry-after": "30",
+                    "x-ratelimit-reset-tokens": "30s",
+                }
+            )
+
+    def failing_node(state):
+        raise FakeRateLimitError()
+
+    wrapped = instrument_node(
+        "worker",
+        failing_node,
+        provider="groq",
+    )
+
+    try:
+        wrapped(
+            {},
+            FakeRuntime(
+                diagnostics,
+                node_attempt=1,
+            ),
+        )
+    except Exception as exc:
+        assert isinstance(
+            exc,
+            RateLimitRetryExhausted,
+        )
+        assert isinstance(
+            exc.__cause__,
+            FakeRateLimitError,
+        )
+    else:
+        raise AssertionError("Expected RateLimitRetryExhausted")
+
+    assert slept == []
+
+
+def test_instrument_node_does_not_sleep_on_final_rate_limit_attempt(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.chdir(tmp_path)
+
+    slept = []
+
+    monkeypatch.setattr(
+        "services.run_diagnostics.time.sleep",
+        lambda seconds: slept.append(seconds),
+    )
+
+    diagnostics = RunDiagnostics(
+        run_id="i" * 32,
+        topic="Final retry attempt",
+    )
+
+    class FakeRateLimitError(Exception):
+        status_code = 429
+
+        def __init__(self):
+            self.response = SimpleNamespace(
+                headers={
+                    "retry-after": "3",
+                }
+            )
+
+    def failing_node(state):
+        raise FakeRateLimitError()
+
+    wrapped = instrument_node(
+        "worker",
+        failing_node,
+        provider="groq",
+    )
+
+    try:
+        wrapped(
+            {},
+            FakeRuntime(
+                diagnostics,
+                node_attempt=4,
+            ),
+        )
+    except Exception as exc:
+        assert isinstance(
+            exc,
+            RateLimitRetryExhausted,
+        )
+        assert isinstance(
+            exc.__cause__,
+            FakeRateLimitError,
+        )
+    else:
+        raise AssertionError("Expected RateLimitRetryExhausted")
+
+    assert slept == []

@@ -7,8 +7,23 @@ from google.genai import errors as genai_errors
 from langchain_core.rate_limiters import InMemoryRateLimiter
 from langgraph.types import RetryPolicy
 
+from services.rate_limits import (
+    extract_rate_limit_info,
+    get_provider_retry_delay_seconds,
+    is_rate_limit_error,
+)
+
 load_dotenv()
 
+
+RATE_LIMIT_SHORT_WAIT_SECONDS = float(
+    os.getenv(
+        "RATE_LIMIT_SHORT_WAIT_SECONDS",
+        "10",
+    )
+)
+
+PROVIDER_RETRY_MAX_ATTEMPTS = 4
 
 rate_limiter = InMemoryRateLimiter(
     requests_per_second=0.33,
@@ -33,11 +48,26 @@ def is_transient_provider_error(
 ) -> bool:
     """Return True only for provider failures worth retrying."""
 
-    # Groq
+    # Groq rate limits require provider-aware classification.
+    if is_rate_limit_error(exc):
+        info = extract_rate_limit_info(exc)
+
+        if info is None:
+            return True
+
+        delay = get_provider_retry_delay_seconds(info)
+
+        # No usable provider timing: retain the existing
+        # bounded retry fallback.
+        if delay is None:
+            return True
+
+        return delay <= RATE_LIMIT_SHORT_WAIT_SECONDS
+
+    # Groq non-rate-limit transient failures.
     if isinstance(
         exc,
         (
-            groq.RateLimitError,
             groq.APIConnectionError,
             groq.APITimeoutError,
             groq.InternalServerError,
@@ -99,7 +129,7 @@ def is_transient_provider_error(
 
 
 provider_retry_policy = RetryPolicy(
-    max_attempts=4,
+    max_attempts=PROVIDER_RETRY_MAX_ATTEMPTS,
     initial_interval=2.0,
     backoff_factor=2.0,
     max_interval=20.0,

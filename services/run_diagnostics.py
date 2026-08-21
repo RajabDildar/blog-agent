@@ -8,7 +8,16 @@ from typing import Any
 
 from langgraph.runtime import get_runtime
 
-from services.rate_limits import RateLimitInfo
+from config.settings import (
+    PROVIDER_RETRY_MAX_ATTEMPTS,
+    RATE_LIMIT_SHORT_WAIT_SECONDS,
+)
+from services.rate_limits import (
+    RateLimitInfo,
+    RateLimitRetryExhausted,
+    extract_rate_limit_info,
+    get_provider_retry_delay_seconds,
+)
 
 
 class RunDiagnostics:
@@ -513,11 +522,9 @@ def instrument_node(
             )
 
             if provider == "groq":
-                from services.rate_limits import (
-                    extract_rate_limit_info,
+                rate_limit_info = extract_rate_limit_info(
+                    exc,
                 )
-
-                rate_limit_info = extract_rate_limit_info(exc)
 
                 if rate_limit_info is not None:
                     diagnostics.record_rate_limit(
@@ -526,6 +533,23 @@ def instrument_node(
                         attempt=attempt,
                         info=rate_limit_info,
                     )
+
+                    delay = get_provider_retry_delay_seconds(
+                        rate_limit_info,
+                    )
+
+                    if delay is not None:
+                        if delay > RATE_LIMIT_SHORT_WAIT_SECONDS:
+                            raise RateLimitRetryExhausted(
+                                rate_limit_info,
+                            ) from exc
+
+                        if attempt >= PROVIDER_RETRY_MAX_ATTEMPTS:
+                            raise RateLimitRetryExhausted(
+                                rate_limit_info,
+                            ) from exc
+
+                        time.sleep(delay)
 
             raise
 

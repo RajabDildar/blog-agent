@@ -21,6 +21,31 @@ class RateLimitInfo:
     limit_tokens: int | None
 
 
+class RateLimitRetryExhausted(RuntimeError):
+    """A provider rate limit must leave the current graph invocation."""
+
+    def __init__(
+        self,
+        info: RateLimitInfo,
+    ) -> None:
+        self.rate_limit_info = info
+
+        delay = get_provider_retry_delay_seconds(info)
+
+        if delay is None:
+            message = (
+                "Groq rate limit retry budget exhausted "
+                "without provider-directed timing."
+            )
+        else:
+            message = (
+                "Groq rate limit requires application-level "
+                f"recovery after {delay:.2f} seconds."
+            )
+
+        super().__init__(message)
+
+
 _DURATION_PATTERN = re.compile(
     r"^\s*"
     r"(?:(?P<minutes>\d+(?:\.\d+)?)m)?"
@@ -161,3 +186,23 @@ def get_provider_retry_delay_seconds(
         return info.reset_tokens_seconds
 
     return None
+
+
+def is_short_rate_limit_wait(
+    info: RateLimitInfo,
+    *,
+    short_wait_seconds: float,
+) -> bool:
+    delay = get_provider_retry_delay_seconds(info)
+
+    return delay is not None and delay <= short_wait_seconds
+
+
+def is_long_rate_limit_wait(
+    info: RateLimitInfo,
+    *,
+    short_wait_seconds: float,
+) -> bool:
+    delay = get_provider_retry_delay_seconds(info)
+
+    return delay is not None and delay > short_wait_seconds
