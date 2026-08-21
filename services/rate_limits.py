@@ -143,3 +143,21 @@ def extract_rate_limit_info(exc: Exception) -> RateLimitInfo | None:
         ),
         limit_tokens=_parse_non_negative_int(headers.get("x-ratelimit-limit-tokens")),
     )
+
+
+def get_provider_retry_delay_seconds(
+    info: RateLimitInfo,
+) -> float | None:
+    """Return the provider-directed delay using documented precedence.
+
+    Groq documents `retry-after` as the explicit retry delay for a 429.
+    If it is unavailable, fall back to the token-window reset duration.
+    Invalid or unavailable values result in no provider-directed delay.
+    """
+    if info.retry_after_seconds is not None:
+        return info.retry_after_seconds
+
+    if info.reset_tokens_seconds is not None:
+        return info.reset_tokens_seconds
+
+    return None

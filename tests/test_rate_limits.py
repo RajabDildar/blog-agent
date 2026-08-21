@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 from services.rate_limits import (
     extract_rate_limit_info,
+    get_provider_retry_delay_seconds,
     is_rate_limit_error,
 )
 
@@ -132,3 +133,76 @@ def test_missing_response_object_is_safe():
     assert info.provider == "groq"
     assert info.status_code == 429
     assert info.retry_after_seconds is None
+
+
+def test_provider_retry_delay_prefers_retry_after():
+    exc = FakeRateLimitError(
+        {
+            "retry-after": "2",
+            "x-ratelimit-reset-tokens": "7.66s",
+        }
+    )
+
+    info = extract_rate_limit_info(exc)
+
+    assert info is not None
+    assert get_provider_retry_delay_seconds(info) == 2.0
+
+
+def test_provider_retry_delay_falls_back_to_token_reset():
+    exc = FakeRateLimitError(
+        {
+            "x-ratelimit-reset-tokens": "7.66s",
+        }
+    )
+
+    info = extract_rate_limit_info(exc)
+
+    assert info is not None
+    assert get_provider_retry_delay_seconds(info) == 7.66
+
+
+def test_invalid_retry_after_does_not_override_valid_token_reset():
+    exc = FakeRateLimitError(
+        {
+            "retry-after": "not-a-duration",
+            "x-ratelimit-reset-tokens": "7.66s",
+        }
+    )
+
+    info = extract_rate_limit_info(exc)
+
+    assert info is not None
+    assert info.retry_after_seconds is None
+    assert info.reset_tokens_seconds == 7.66
+    assert get_provider_retry_delay_seconds(info) == 7.66
+
+
+def test_invalid_provider_timing_returns_no_delay():
+    exc = FakeRateLimitError(
+        {
+            "retry-after": "invalid",
+            "x-ratelimit-reset-tokens": "also-invalid",
+        }
+    )
+
+    info = extract_rate_limit_info(exc)
+
+    assert info is not None
+    assert get_provider_retry_delay_seconds(info) is None
+
+
+def test_provider_retry_delay_returns_none_when_metadata_is_missing():
+    exc = FakeRateLimitError()
+
+    info = extract_rate_limit_info(exc)
+
+    assert info is not None
+    assert get_provider_retry_delay_seconds(info) is None
+
+
+def test_provider_retry_delay_requires_rate_limit_metadata():
+    exc = FakeProviderError()
+
+    assert is_rate_limit_error(exc) is False
+    assert extract_rate_limit_info(exc) is None
