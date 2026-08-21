@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+from services.rate_limits import RateLimitInfo
 from services.run_diagnostics import (
     RunDiagnostics,
     instrument_node,
@@ -246,3 +247,131 @@ def test_record_resume_preserves_history_and_clears_active_failure():
 
     assert resume_event["event"] == "run_resumed"
     assert resume_event["previous_failure"] == failure
+
+
+def test_diagnostics_records_normalized_rate_limit_event(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.chdir(tmp_path)
+
+    diagnostics = RunDiagnostics(
+        run_id="f" * 32,
+        topic="Rate limit diagnostics",
+    )
+
+    diagnostics.record_rate_limit(
+        node="worker",
+        provider="groq",
+        attempt=2,
+        info=RateLimitInfo(
+            provider="groq",
+            status_code=429,
+            retry_after_seconds=2.0,
+            reset_tokens_seconds=7.66,
+            remaining_tokens=0,
+            limit_tokens=8000,
+        ),
+    )
+
+    data = json.loads(
+        Path(
+            "runs",
+            "f" * 32,
+            "diagnostics.json",
+        ).read_text(
+            encoding="utf-8",
+        )
+    )
+
+    rate_limit_events = [
+        event for event in data["events"] if event["event"] == "rate_limit"
+    ]
+
+    assert len(rate_limit_events) == 1
+
+    event = rate_limit_events[0]
+
+    assert event["node"] == "worker"
+    assert event["provider"] == "groq"
+    assert event["attempt"] == 2
+    assert event["status_code"] == 429
+    assert event["retry_after_seconds"] == 2.0
+    assert event["reset_tokens_seconds"] == 7.66
+    assert event["remaining_tokens"] == 0
+    assert event["limit_tokens"] == 8000
+
+
+def test_instrument_node_records_groq_rate_limit_event(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.chdir(tmp_path)
+
+    diagnostics = RunDiagnostics(
+        run_id="g" * 32,
+        topic="Rate limit instrumentation",
+    )
+
+    class FakeRateLimitError(Exception):
+        status_code = 429
+
+        def __init__(self):
+            self.response = SimpleNamespace(
+                headers={
+                    "retry-after": "3",
+                    "x-ratelimit-reset-tokens": "9.5s",
+                    "x-ratelimit-remaining-tokens": "0",
+                    "x-ratelimit-limit-tokens": "8000",
+                }
+            )
+
+    def failing_node(state):
+        raise FakeRateLimitError()
+
+    wrapped = instrument_node(
+        "worker",
+        failing_node,
+        provider="groq",
+    )
+
+    try:
+        wrapped(
+            {},
+            FakeRuntime(
+                diagnostics,
+                node_attempt=1,
+            ),
+        )
+    except FakeRateLimitError:
+        pass
+    else:
+        raise AssertionError("Expected FakeRateLimitError")
+
+    data = json.loads(
+        Path(
+            "runs",
+            "g" * 32,
+            "diagnostics.json",
+        ).read_text(
+            encoding="utf-8",
+        )
+    )
+
+    assert any(event["event"] == "node_failed" for event in data["events"])
+
+    rate_limit_events = [
+        event for event in data["events"] if event["event"] == "rate_limit"
+    ]
+
+    assert len(rate_limit_events) == 1
+
+    event = rate_limit_events[0]
+
+    assert event["node"] == "worker"
+    assert event["provider"] == "groq"
+    assert event["status_code"] == 429
+    assert event["retry_after_seconds"] == 3.0
+    assert event["reset_tokens_seconds"] == 9.5
+    assert event["remaining_tokens"] == 0
+    assert event["limit_tokens"] == 8000

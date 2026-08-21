@@ -8,6 +8,8 @@ from typing import Any
 
 from langgraph.runtime import get_runtime
 
+from services.rate_limits import RateLimitInfo
+
 
 class RunDiagnostics:
     def __init__(
@@ -180,6 +182,30 @@ class RunDiagnostics:
                 attempt=attempt,
                 exception_type=type(exc).__name__,
                 message=str(exc),
+            )
+
+    def record_rate_limit(
+        self,
+        *,
+        node: str,
+        provider: str,
+        attempt: int,
+        info: RateLimitInfo,
+    ) -> None:
+        with self._lock:
+            self.current_stage = node
+            self.current_provider = provider
+
+            self._record_event(
+                event="rate_limit",
+                node=node,
+                provider=provider,
+                attempt=attempt,
+                status_code=info.status_code,
+                retry_after_seconds=info.retry_after_seconds,
+                reset_tokens_seconds=info.reset_tokens_seconds,
+                remaining_tokens=info.remaining_tokens,
+                limit_tokens=info.limit_tokens,
             )
 
     def record_markdown_gate(
@@ -485,6 +511,22 @@ def instrument_node(
                 attempt=attempt,
                 exc=exc,
             )
+
+            if provider == "groq":
+                from services.rate_limits import (
+                    extract_rate_limit_info,
+                )
+
+                rate_limit_info = extract_rate_limit_info(exc)
+
+                if rate_limit_info is not None:
+                    diagnostics.record_rate_limit(
+                        node=node_name,
+                        provider=provider,
+                        attempt=attempt,
+                        info=rate_limit_info,
+                    )
+
             raise
 
         diagnostics.node_succeeded(
