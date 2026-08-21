@@ -1,4 +1,5 @@
 import json
+import time
 
 import pytest
 
@@ -12,8 +13,16 @@ from eval.report import (
     build_report,
     calculate_average_scores,
 )
-from eval.run_eval import load_topics
+from eval.run_eval import (
+    _wait_for_resume,
+    load_topics,
+    run_evaluation,
+)
 from eval.score import extract_metrics
+from services.rate_limits import (
+    RateLimitInfo,
+    RateLimitRetryExhausted,
+)
 
 
 def test_extract_metrics_from_diagnostics():
@@ -193,3 +202,290 @@ def test_load_topics_rejects_empty_result(
         match="cannot be empty",
     ):
         load_topics(path)
+
+
+def make_metrics() -> EvaluationMetrics:
+    return EvaluationMetrics(
+        llm_calls=0,
+        research_calls=0,
+        image_calls=0,
+        revision_count=0,
+        generation_time_seconds=0,
+        retries=0,
+    )
+
+
+def test_wait_for_resume_rejects_wait_over_limit(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "eval.run_eval.load_diagnostics",
+        lambda run_id: {
+            "resume_after": time.time() + 30,
+        },
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="configured evaluation maximum",
+    ):
+        _wait_for_resume(
+            run_id="run-1",
+            max_wait_seconds=1,
+        )
+
+
+def test_run_evaluation_resumes_same_run_id(
+    monkeypatch,
+    tmp_path,
+):
+    run_ids = iter(["run-1"])
+
+    monkeypatch.setattr(
+        "eval.run_eval.generate_run_id",
+        lambda: next(run_ids),
+    )
+
+    resume_calls = []
+
+    def fake_run(topic, *, run_id):
+        raise RateLimitRetryExhausted(
+            RateLimitInfo(
+                provider="groq",
+                status_code=429,
+                retry_after_seconds=0,
+                reset_tokens_seconds=None,
+                remaining_tokens=0,
+                limit_tokens=8000,
+            )
+        )
+
+    def fake_resume(run_id):
+        resume_calls.append(run_id)
+
+        return {
+            "plan": object(),
+            "final": "Article",
+            "saved_path": "article.md",
+        }
+
+    monkeypatch.setattr(
+        "eval.run_eval.run",
+        fake_run,
+    )
+
+    monkeypatch.setattr(
+        "eval.run_eval.resume",
+        fake_resume,
+    )
+
+    monkeypatch.setattr(
+        "eval.run_eval.load_diagnostics",
+        lambda run_id: {
+            "resume_after": time.time(),
+            "provider_attempts": {},
+            "image_attempts": 0,
+            "editorial_revisions": 0,
+            "duration_seconds": 0,
+            "retry_count": 0,
+        },
+    )
+
+    monkeypatch.setattr(
+        "eval.run_eval.evaluate_article",
+        lambda **kwargs: (
+            make_run(
+                topic=kwargs["topic"],
+                overall_quality=8,
+            ).evaluation
+        ),
+    )
+
+    runs = run_evaluation(
+        topics=["AI agents"],
+        output_dir=tmp_path,
+        between_run_delay_seconds=0,
+    )
+
+    assert resume_calls == ["run-1"]
+    assert runs[0].run_id == "run-1"
+    assert runs[0].status == "success"
+    assert runs[0].rate_limit_recoveries == 1
+
+
+def test_terminal_failure_does_not_stop_next_topic(
+    monkeypatch,
+    tmp_path,
+):
+    run_ids = iter(
+        [
+            "run-1",
+            "run-2",
+        ]
+    )
+
+    monkeypatch.setattr(
+        "eval.run_eval.generate_run_id",
+        lambda: next(run_ids),
+    )
+
+    def fake_run(topic, *, run_id):
+        if topic == "first":
+            raise RuntimeError(
+                "terminal failure",
+            )
+
+        return {
+            "plan": object(),
+            "final": "Article",
+            "saved_path": "article.md",
+        }
+
+    monkeypatch.setattr(
+        "eval.run_eval.run",
+        fake_run,
+    )
+
+    monkeypatch.setattr(
+        "eval.run_eval.load_diagnostics",
+        lambda run_id: {
+            "provider_attempts": {},
+            "image_attempts": 0,
+            "editorial_revisions": 0,
+            "duration_seconds": 0,
+            "retry_count": 0,
+        },
+    )
+
+    monkeypatch.setattr(
+        "eval.run_eval.evaluate_article",
+        lambda **kwargs: (
+            make_run(
+                topic=kwargs["topic"],
+                overall_quality=8,
+            ).evaluation
+        ),
+    )
+
+    runs = run_evaluation(
+        topics=[
+            "first",
+            "second",
+        ],
+        output_dir=tmp_path,
+        between_run_delay_seconds=0,
+    )
+
+    assert [run.status for run in runs] == [
+        "failed",
+        "success",
+    ]
+
+
+def test_completed_results_are_preserved_on_rerun(
+    monkeypatch,
+    tmp_path,
+):
+    existing = make_run(
+        topic="completed",
+        overall_quality=8,
+    )
+
+    from eval.report import write_report
+
+    write_report(
+        runs=[existing],
+        output_dir=tmp_path,
+    )
+
+    generated_topics = []
+
+    monkeypatch.setattr(
+        "eval.run_eval.generate_run_id",
+        lambda: "new-run",
+    )
+
+    def fake_run(topic, *, run_id):
+        generated_topics.append(topic)
+
+        return {
+            "plan": object(),
+            "final": "Article",
+            "saved_path": "article.md",
+        }
+
+    monkeypatch.setattr(
+        "eval.run_eval.run",
+        fake_run,
+    )
+
+    monkeypatch.setattr(
+        "eval.run_eval.load_diagnostics",
+        lambda run_id: {
+            "provider_attempts": {},
+            "image_attempts": 0,
+            "editorial_revisions": 0,
+            "duration_seconds": 0,
+            "retry_count": 0,
+        },
+    )
+
+    monkeypatch.setattr(
+        "eval.run_eval.evaluate_article",
+        lambda **kwargs: (
+            make_run(
+                topic=kwargs["topic"],
+                overall_quality=7,
+            ).evaluation
+        ),
+    )
+
+    runs = run_evaluation(
+        topics=[
+            "completed",
+            "new",
+        ],
+        output_dir=tmp_path,
+        between_run_delay_seconds=0,
+    )
+
+    assert generated_topics == ["new"]
+    assert [run.topic for run in runs] == [
+        "completed",
+        "new",
+    ]
+
+
+def test_report_supports_mixed_recovery_results(
+    tmp_path,
+):
+    recovered = make_run(
+        topic="Recovered",
+        overall_quality=8,
+    ).model_copy(
+        update={
+            "rate_limit_recoveries": 2,
+            "rate_limit_wait_seconds": 12.5,
+        }
+    )
+
+    failed = EvaluationRun(
+        topic="Failed",
+        run_id="failed-run",
+        status="failed",
+        metrics=make_metrics(),
+        failure="RuntimeError: failed",
+        rate_limit_recoveries=1,
+        rate_limit_wait_seconds=5,
+    )
+
+    report = build_report(
+        [
+            recovered,
+            failed,
+        ]
+    )
+
+    assert "Rate-limit recoveries: 2" in report
+    assert "Rate-limit wait: 12.50s" in report
+    assert "Rate-limit recoveries: 1" in report

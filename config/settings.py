@@ -26,6 +26,27 @@ RATE_LIMIT_SHORT_WAIT_SECONDS = float(
     )
 )
 
+EVAL_MAX_RATE_LIMIT_WAIT_SECONDS = float(
+    os.getenv(
+        "EVAL_MAX_RATE_LIMIT_WAIT_SECONDS",
+        "120",
+    )
+)
+
+EVAL_BETWEEN_RUN_DELAY_SECONDS = float(
+    os.getenv(
+        "EVAL_BETWEEN_RUN_DELAY_SECONDS",
+        "5",
+    )
+)
+
+EVAL_RESUME_ATTEMPT_LIMIT = int(
+    os.getenv(
+        "EVAL_RESUME_ATTEMPT_LIMIT",
+        "3",
+    )
+)
+
 GROQ_MAX_CONCURRENT_GENERATIONS = int(
     os.getenv(
         "GROQ_MAX_CONCURRENT_GENERATIONS",

@@ -119,3 +119,13 @@ class EvaluationRun(BaseModel):
     metrics: EvaluationMetrics
 
     failure: str | None = None
+
+    rate_limit_recoveries: int = Field(
+        default=0,
+        ge=0,
+    )
+
+    rate_limit_wait_seconds: float = Field(
+        default=0,
+        ge=0,
+    )

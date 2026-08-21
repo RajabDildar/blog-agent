@@ -74,6 +74,8 @@ def build_report(
                 (f"- Revision count: {run.metrics.revision_count}"),
                 (f"- Generation time: {run.metrics.generation_time_seconds:.2f}s"),
                 f"- Retries: {run.metrics.retries}",
+                f"- Rate-limit recoveries: {run.rate_limit_recoveries}",
+                (f"- Rate-limit wait: {run.rate_limit_wait_seconds:.2f}s"),
             ]
         )
 
@@ -89,6 +91,33 @@ def build_report(
         lines.append("")
 
     return "\n".join(lines)
+
+
+def load_results(
+    output_dir: Path,
+) -> list[EvaluationRun]:
+    json_path = output_dir / "results.json"
+
+    if not json_path.is_file():
+        return []
+
+    data = json.loads(
+        json_path.read_text(
+            encoding="utf-8",
+        )
+    )
+
+    if not isinstance(data, list):
+        raise ValueError(
+            "Evaluation results must be a JSON list.",
+        )
+
+    return [
+        EvaluationRun.model_validate(
+            item,
+        )
+        for item in data
+    ]
 
 
 def write_report(
