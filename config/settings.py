@@ -47,6 +47,20 @@ EVAL_RESUME_ATTEMPT_LIMIT = int(
     )
 )
 
+TAVILY_MIN_RELEVANCE_SCORE = float(
+    os.getenv(
+        "TAVILY_MIN_RELEVANCE_SCORE",
+        "0.3",
+    )
+)
+
+TAVILY_MAX_RESULTS_PER_DOMAIN = int(
+    os.getenv(
+        "TAVILY_MAX_RESULTS_PER_DOMAIN",
+        "2",
+    )
+)
+
 GROQ_MAX_CONCURRENT_GENERATIONS = int(
     os.getenv(
         "GROQ_MAX_CONCURRENT_GENERATIONS",

@@ -2,7 +2,9 @@ import os
 
 from tavily import TavilyClient
 
-client = TavilyClient(api_key=os.environ["TAVILY_API_KEY"])
+client = TavilyClient(
+    api_key=os.environ["TAVILY_API_KEY"],
+)
 
 
 def _normalize_result(
@@ -15,6 +17,7 @@ def _normalize_result(
         "score": result.get("score") or 0,
         "content": result.get("content") or "",
         "raw_content": result.get("raw_content") or "",
+        "published_at": (result.get("published_date") or result.get("published_at")),
     }
 
 

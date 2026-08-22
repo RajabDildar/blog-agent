@@ -25,12 +25,25 @@ Rules:
 
 5. Do not treat a source title as evidence.
 
-6. Remove duplicate URLs.
+6. Search results have already passed deterministic quality
+   controls. Do not reintroduce duplicate URLs.
 
-7. Ignore low-quality SEO pages and irrelevant results.
+7. Use publication dates and freshness metadata when judging
+   whether evidence supports the requested topic.
 
-8. Separate factual evidence from interpretation.
+8. A stale warning means the source may be outdated for the
+   requested time-sensitive research focus. Do not present the
+   claim as current unless the available evidence supports that.
 
-9. The research brief should summarize only what the
-   collected sources actually support.
+9. Do not reject an authoritative evergreen source solely
+   because it is old. Technical specifications, foundational
+   documentation, standards, and other stable sources may
+   remain valid.
+
+10. Ignore low-quality SEO pages and irrelevant results.
+
+11. Separate factual evidence from interpretation.
+
+12. The research brief should summarize only what the
+    collected sources actually support.
 """
