@@ -50,9 +50,53 @@ def fanout(state: State):
     if plan is None:
         raise ValueError("Plan missing")
 
+    evidence_by_id = {
+        evidence.id: evidence
+        for evidence in state.get(
+            "evidence",
+            [],
+        )
+    }
+
     sends = []
 
     for index, task in enumerate(plan.tasks):
+        if not task.requires_research:
+            if task.evidence_refs:
+                raise ValueError(
+                    "Task "
+                    f"{task.id} does not require research but "
+                    f"has evidence_refs: {task.evidence_refs}"
+                )
+
+            task_evidence = []
+        else:
+            seen_refs: set[int] = set()
+            task_evidence = []
+
+            for evidence_id in task.evidence_refs:
+                if evidence_id in seen_refs:
+                    raise ValueError(
+                        "Task "
+                        f"{task.id} has duplicate evidence reference: "
+                        f"{evidence_id}"
+                    )
+
+                seen_refs.add(evidence_id)
+
+                evidence = evidence_by_id.get(
+                    evidence_id,
+                )
+
+                if evidence is None:
+                    raise ValueError(
+                        f"Task {task.id} references unknown evidence ID: {evidence_id}"
+                    )
+
+                task_evidence.append(
+                    evidence,
+                )
+
         previous_summary = ""
         next_goal = ""
 
@@ -74,13 +118,7 @@ def fanout(state: State):
                     "topic": state["topic"],
                     "mode": state["mode"],
                     "plan": plan.model_dump(),
-                    "evidence": [
-                        e.model_dump()
-                        for e in state.get(
-                            "evidence",
-                            [],
-                        )
-                    ],
+                    "evidence": [evidence.model_dump() for evidence in task_evidence],
                     "previous_summary": previous_summary,
                     "next_goal": next_goal,
                 },

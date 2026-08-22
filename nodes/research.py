@@ -4,7 +4,10 @@ from langchain_core.messages import (
 )
 
 from prompts.research import RESEARCH_SYSTEM
-from schemas.models import ResearchPack
+from schemas.models import (
+    ResearchEvidence,
+    ResearchPack,
+)
 from schemas.state import State
 from services.llm import gemini_llm
 from services.tavily import tavily_search
@@ -69,7 +72,18 @@ def research_node(
         ]
     )
 
+    evidence = [
+        ResearchEvidence(
+            id=index,
+            **item.model_dump(exclude={"id"}),
+        )
+        for index, item in enumerate(
+            pack.evidence,
+            start=1,
+        )
+    ]
+
     return {
-        "evidence": pack.evidence,
+        "evidence": evidence,
         "research_brief": pack.research_brief,
     }

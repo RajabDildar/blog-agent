@@ -38,7 +38,7 @@ def worker_node(payload: dict) -> dict:
             f"  URL: {e.url}\n"
             f"  Evidence: {e.supporting_text}"
         )
-        for e in evidence[:12]
+        for e in evidence
     )
 
     previous_summary = payload.get(

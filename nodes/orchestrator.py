@@ -3,14 +3,46 @@ from langchain_core.messages import (
     SystemMessage,
 )
 
-from prompts.planner import ORCH_SYSTEM
-from schemas.models import Plan
+from prompts.planner import PLANNER_SYSTEM
+from schemas.models import (
+    Plan,
+    ResearchEvidence,
+)
 from schemas.state import State
 from services.llm import gemini_llm
-from services.time import (
-    current_date,
-    current_year,
-)
+
+
+def validate_plan_evidence_refs(
+    plan: Plan,
+    evidence: list[ResearchEvidence],
+) -> None:
+    available_evidence_ids = {item.id for item in evidence}
+
+    for task in plan.tasks:
+        if not task.requires_research:
+            if task.evidence_refs:
+                raise ValueError(
+                    "Task "
+                    f"{task.id} does not require research but "
+                    f"has evidence_refs: {task.evidence_refs}"
+                )
+
+            continue
+
+        seen_refs: set[int] = set()
+
+        for evidence_id in task.evidence_refs:
+            if evidence_id in seen_refs:
+                raise ValueError(
+                    f"Task {task.id} has duplicate evidence reference: {evidence_id}"
+                )
+
+            seen_refs.add(evidence_id)
+
+            if evidence_id not in available_evidence_ids:
+                raise ValueError(
+                    f"Task {task.id} references unknown evidence ID: {evidence_id}"
+                )
 
 
 def orchestrator_node(
@@ -18,24 +50,31 @@ def orchestrator_node(
 ) -> dict:
     planner = gemini_llm.with_structured_output(Plan)
 
-    evidence = state.get("evidence", [])
+    evidence = state.get(
+        "evidence",
+        [],
+    )
 
     plan = planner.invoke(
         [
-            SystemMessage(content=ORCH_SYSTEM),
+            SystemMessage(
+                content=PLANNER_SYSTEM,
+            ),
             HumanMessage(
                 content=(
-                    f"Current date: {current_date()}\n"
-                    f"Current year: {current_year()}\n\n"
-                    f"Topic: {state['topic']}\n"
-                    f"Mode: {state['mode']}\n\n"
+                    f"Topic: {state['topic']}\n\n"
                     f"Research brief:\n"
                     f"{state.get('research_brief', '')}\n\n"
-                    f"Evidence:\n"
-                    f"{[e.model_dump() for e in evidence][:20]}"
+                    f"Research evidence:\n"
+                    f"{evidence}"
                 )
             ),
         ]
+    )
+
+    validate_plan_evidence_refs(
+        plan,
+        evidence,
     )
 
     return {

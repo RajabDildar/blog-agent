@@ -44,6 +44,8 @@ class Task(BaseModel):
     requires_citations: bool = False
     requires_code: bool = False
 
+    evidence_refs: list[int] = Field(default_factory=list)
+
     must_avoid: list[str] = Field(default_factory=list)
 
 
@@ -76,6 +78,8 @@ class Plan(BaseModel):
 
 
 class ResearchEvidence(BaseModel):
+    id: int
+
     claim: str
     source_title: str
     url: str
