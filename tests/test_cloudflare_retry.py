@@ -81,6 +81,63 @@ def test_cloudflare_429_is_retried_then_succeeds(monkeypatch):
     assert calls == 2
 
 
+def test_cloudflare_429_respects_retry_after_header(monkeypatch):
+    calls = 0
+    sleeps = []
+
+    def fake_post(*args, **kwargs):
+        nonlocal calls
+
+        calls += 1
+
+        if calls == 1:
+            response = make_response(
+                429,
+                {
+                    "success": False,
+                    "errors": [
+                        {
+                            "code": 3040,
+                            "message": "Out of capacity",
+                        }
+                    ],
+                },
+            )
+
+            response.headers["retry-after"] = "7"
+
+            return response
+
+        return make_response(
+            200,
+            {
+                "success": True,
+                "result": {
+                    "image": "aGVsbG8=",
+                },
+            },
+        )
+
+    monkeypatch.setattr(
+        "services.cloudflare.requests.post",
+        fake_post,
+    )
+
+    monkeypatch.setattr(
+        "services.cloudflare.time.sleep",
+        lambda value: sleeps.append(value),
+    )
+
+    result = cloudflare_generate_image_bytes(
+        "test prompt",
+        max_attempts=3,
+    )
+
+    assert result == b"hello"
+    assert calls == 2
+    assert sleeps == [7.0]
+
+
 def test_cloudflare_timeout_is_retried(monkeypatch):
     calls = 0
 
