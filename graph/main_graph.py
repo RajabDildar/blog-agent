@@ -14,6 +14,9 @@ from config.settings import (
 from nodes.article_validator import (
     article_validator_node,
 )
+from nodes.citation_verifier import (
+    citation_verifier_node,
+)
 from nodes.editor import editor_node
 from nodes.image_generator import generate_images_node
 from nodes.image_planner import image_planner_node
@@ -345,6 +348,14 @@ def build_graph(
     )
 
     builder.add_node(
+        "citation_verifier",
+        instrument_node(
+            "citation_verifier",
+            citation_verifier_node,
+        ),
+    )
+
+    builder.add_node(
         "editor",
         instrument_node(
             "editor",
@@ -473,8 +484,13 @@ def build_graph(
         "merge",
     )
 
-    builder.add_conditional_edges(
+    builder.add_edge(
         "merge",
+        "citation_verifier",
+    )
+
+    builder.add_conditional_edges(
+        "citation_verifier",
         route_after_merge,
         {
             "editor": "editor",
@@ -619,6 +635,7 @@ def run(
                 "plan": None,
                 "sections": {},
                 "merged_md": "",
+                "citation_issues": [],
                 "editorial_review": None,
                 "revision_count": 0,
                 "image_specs": [],

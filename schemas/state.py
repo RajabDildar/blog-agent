@@ -2,6 +2,7 @@ import operator
 from typing import Annotated, TypedDict
 
 from schemas.models import (
+    EditorialIssue,
     EditorialReview,
     Plan,
     ResearchEvidence,
@@ -29,6 +30,8 @@ class State(TypedDict):
     ]
 
     merged_md: str
+
+    citation_issues: list[EditorialIssue]
 
     editorial_review: EditorialReview | None
     revision_count: int
