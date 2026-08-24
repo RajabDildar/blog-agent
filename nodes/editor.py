@@ -11,6 +11,9 @@ from schemas.models import (
     ResearchEvidence,
 )
 from schemas.state import State
+from services.citation_verification import (
+    verify_evidence_quality,
+)
 from services.llm import gemini_llm
 from services.run_diagnostics import (
     get_current_diagnostics,
@@ -60,6 +63,10 @@ def build_editor_evidence_sheet(
             "claim": item.claim,
             "source_title": item.source_title,
             "url": item.url,
+            "source_type": item.source_type,
+            "authority_score": item.authority_score,
+            "support_strength": item.support_strength,
+            "confidence_score": item.confidence_score,
         }
         for item in evidence
     ]
@@ -73,10 +80,21 @@ def editor_node(
     if plan is None:
         raise ValueError("Plan is missing")
 
-    citation_issues = state.get(
-        "citation_issues",
-        [],
+    evidence_quality_issues = verify_evidence_quality(
+        tasks=plan.tasks,
+        evidence=state.get(
+            "evidence",
+            [],
+        ),
     )
+
+    citation_issues = [
+        *state.get(
+            "citation_issues",
+            [],
+        ),
+        *evidence_quality_issues,
+    ]
 
     evidence_sheet = build_editor_evidence_sheet(
         state.get(

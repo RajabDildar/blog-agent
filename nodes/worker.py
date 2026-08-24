@@ -36,6 +36,10 @@ def worker_node(payload: dict) -> dict:
             f"- Claim: {e.claim}\n"
             f"  Source: {e.source_title}\n"
             f"  URL: {e.url}\n"
+            f"  Source type: {e.source_type}\n"
+            f"  Authority score: {e.authority_score}\n"
+            f"  Support strength: {e.support_strength}\n"
+            f"  Confidence score: {e.confidence_score}\n"
             f"  Evidence: {e.supporting_text}"
         )
         for e in evidence

@@ -462,3 +462,20 @@ def test_fanout_rejects_evidence_for_non_research_task() -> None:
                 ],
             )
         )
+
+
+def test_worker_includes_evidence_quality_metadata():
+    evidence = ResearchEvidence(
+        id=1,
+        claim="FastAPI supports async endpoints.",
+        source_title="FastAPI Docs",
+        url="https://fastapi.tiangolo.com",
+        source_type="official_documentation",
+        authority_score=0.95,
+        support_strength="direct",
+        confidence_score=0.9,
+    )
+
+    assert evidence.authority_score == 0.95
+    assert evidence.support_strength == "direct"
+    assert evidence.confidence_score == 0.9

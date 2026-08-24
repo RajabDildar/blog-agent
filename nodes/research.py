@@ -21,6 +21,9 @@ from schemas.models import (
 )
 from schemas.state import State
 from services.llm import gemini_llm
+from services.source_quality import (
+    classify_source,
+)
 from services.tavily import tavily_search
 
 TIME_SENSITIVE_KEYWORDS = {
@@ -52,6 +55,37 @@ def _result_domain(
     return urlparse(
         result.get("url") or "",
     ).netloc.lower()
+
+
+def _apply_source_quality(
+    result: dict,
+) -> dict:
+    quality = classify_source(
+        result.get("url") or "",
+    )
+
+    return {
+        **result,
+        "source_type": quality.source_type,
+        "authority_score": quality.authority_score,
+    }
+
+
+def _research_ranking_score(
+    result: dict,
+) -> float:
+    relevance_score = _result_score(
+        result,
+    )
+
+    authority_score = float(
+        result.get(
+            "authority_score",
+            0.0,
+        )
+    )
+
+    return relevance_score * 0.7 + authority_score * 0.3
 
 
 def _parse_published_at(
@@ -158,7 +192,9 @@ def apply_research_quality_gate(
     now: datetime | None = None,
 ) -> list[dict]:
     filtered = [
-        result for result in results if _result_score(result) >= min_relevance_score
+        _apply_source_quality(result)
+        for result in results
+        if _result_score(result) >= min_relevance_score
     ]
 
     unique_by_url: dict[str, dict] = {}
@@ -177,7 +213,7 @@ def apply_research_quality_gate(
     ranked = sorted(
         unique_by_url.values(),
         key=lambda result: (
-            -_result_score(result),
+            -_research_ranking_score(result),
             result.get("url") or "",
         ),
     )
@@ -245,11 +281,21 @@ def research_node(
                 "title": result["title"],
                 "url": result["url"],
                 "score": result["score"],
+                "source_type": result.get(
+                    "source_type",
+                    "unknown",
+                ),
+                "authority_score": result.get(
+                    "authority_score",
+                    0.0,
+                ),
+                "source_quality_note": (
+                    f"Authority score: "
+                    f"{result.get('authority_score', 0.0)}, "
+                    f"Type: "
+                    f"{result.get('source_type', 'unknown')}"
+                ),
                 "content": result["content"][:2000],
-                "raw_content": (result["raw_content"][:2500]),
-                "published_at": (result.get("published_at")),
-                "freshness_status": (result["freshness_status"]),
-                "freshness_warning": (result["freshness_warning"]),
             }
         )
 

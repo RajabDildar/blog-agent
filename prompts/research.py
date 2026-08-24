@@ -16,12 +16,34 @@ Rules:
 
 3. Never invent facts.
 
-4. Every evidence item must contain:
-   - one concrete claim
-   - source title
-   - exact URL
-   - supporting text from the source
-   - why the source is relevant
+4.Every evidence item must contain:
+
+- one concrete claim
+- source title
+- exact URL
+- supporting text from the source
+- why the source is relevant
+
+Additionally classify the evidence:
+
+- support_strength:
+    - direct: the source explicitly supports the claim
+    - indirect: the source supports related context but not the exact claim
+    - weak: the connection is uncertain
+
+- confidence_score:
+    - a value between 0.0 and 1.0
+    - reflects confidence that the extracted claim is accurately supported
+
+Use the source authority metadata when judging confidence.
+
+Prefer:
+- direct support from authoritative sources
+- precise claims over broad claims
+- evidence over interpretation
+
+Do not increase confidence only because a source is authoritative.
+A high-authority source can still weakly support a specific claim.
 
 5. Do not treat a source title as evidence.
 

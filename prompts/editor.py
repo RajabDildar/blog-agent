@@ -25,6 +25,10 @@ Evidence rules:
 - Do not invent sources or claim that unsupported evidence exists.
 - If an important claim lacks support, flag it as unsupported.
 - Distinguish between a citation formatting issue and a claim that is unsupported.
+- Consider evidence quality when reviewing citations.
+- Prefer claims supported by authoritative sources.
+- Flag citations that rely on weak evidence.
+- If evidence confidence is low, recommend narrowing the claim.
 
 Only flag issues that materially hurt the article.
 

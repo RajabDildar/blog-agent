@@ -2,6 +2,25 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+SourceType = Literal[
+    "official_documentation",
+    "government_source",
+    "academic_paper",
+    "official_company_announcement",
+    "github_repository",
+    "standards_document",
+    "reputable_industry_source",
+    "vendor_blog",
+    "unknown",
+]
+
+
+SupportStrength = Literal[
+    "direct",
+    "indirect",
+    "weak",
+]
+
 
 class Task(BaseModel):
     id: int
@@ -88,6 +107,22 @@ class ResearchEvidence(BaseModel):
     relevance: str = ""
 
     published_at: str | None = None
+
+    source_type: SourceType = "unknown"
+
+    authority_score: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+    )
+
+    support_strength: SupportStrength = "weak"
+
+    confidence_score: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+    )
 
 
 class ResearchPack(BaseModel):

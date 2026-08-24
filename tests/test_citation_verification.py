@@ -177,3 +177,41 @@ def test_section_without_research_requirements_has_no_missing_citation_issue() -
     )
 
     assert issues == []
+
+
+def test_low_authority_evidence_creates_quality_issue():
+    from services.citation_verification import (
+        verify_evidence_quality,
+    )
+
+    evidence = [
+        ResearchEvidence(
+            id=1,
+            claim="Example claim",
+            source_title="Unknown Blog",
+            url="https://example.com/blog/article",
+            authority_score=0.3,
+            support_strength="weak",
+        )
+    ]
+
+    task = Task(
+        id=1,
+        title="Test Section",
+        goal="Explain topic",
+        bullets=[
+            "point one",
+            "point two",
+            "point three",
+        ],
+        target_words=200,
+        requires_citations=True,
+        evidence_refs=[1],
+    )
+
+    issues = verify_evidence_quality(
+        tasks=[task],
+        evidence=evidence,
+    )
+
+    assert any(issue.category == "citation" for issue in issues)

@@ -6,6 +6,10 @@ from datetime import (
 from nodes.research import (
     apply_research_quality_gate,
 )
+from schemas.models import ResearchEvidence
+from services.source_quality import (
+    classify_source,
+)
 
 NOW = datetime(
     2026,
@@ -261,3 +265,55 @@ def test_stale_time_sensitive_evidence_gets_warning() -> None:
         "Verify that the claim is still current."
         in quality_results[0]["freshness_warning"]
     )
+
+
+def test_research_results_receive_authority_metadata():
+    result = {
+        "url": "https://fastapi.tiangolo.com/",
+        "score": 0.9,
+    }
+
+    quality = classify_source(
+        result["url"],
+    )
+
+    assert quality.source_type == "official_documentation"
+    assert quality.authority_score >= 0.9
+
+
+def test_authoritative_source_can_rank_above_equal_relevance_source():
+    results = [
+        {
+            "url": "https://random-example.com/article",
+            "score": 0.9,
+            "title": "Random article",
+        },
+        {
+            "url": "https://fastapi.tiangolo.com/",
+            "score": 0.9,
+            "title": "Official docs",
+        },
+    ]
+
+    ranked = apply_research_quality_gate(
+        results,
+        research_focus=[],
+    )
+
+    assert ranked[0]["title"] == "Official docs"
+
+
+def test_research_evidence_accepts_grounding_metadata():
+    evidence = ResearchEvidence(
+        id=1,
+        claim="FastAPI supports async endpoints.",
+        source_title="FastAPI docs",
+        url="https://fastapi.tiangolo.com",
+        source_type="official_documentation",
+        authority_score=0.95,
+        support_strength="direct",
+        confidence_score=0.9,
+    )
+
+    assert evidence.support_strength == "direct"
+    assert evidence.confidence_score == 0.9

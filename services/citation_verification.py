@@ -167,6 +167,61 @@ def _task_evidence_urls(
     }
 
 
+def _task_evidence_by_url(
+    task: Task,
+    evidence_by_id: dict[int, ResearchEvidence],
+) -> dict[str, ResearchEvidence]:
+    return {
+        normalize_url(item.url): item
+        for evidence_id in task.evidence_refs
+        if (item := evidence_by_id.get(evidence_id)) is not None
+    }
+
+
+def verify_evidence_quality(
+    *,
+    tasks: list[Task],
+    evidence: list[ResearchEvidence],
+) -> list[EditorialIssue]:
+    evidence_by_id = {item.id: item for item in evidence}
+
+    issues: list[EditorialIssue] = []
+
+    for task in tasks:
+        for evidence_id in task.evidence_refs:
+            item = evidence_by_id.get(evidence_id)
+
+            if item is None:
+                continue
+
+            if item.authority_score < 0.5:
+                issues.append(
+                    EditorialIssue(
+                        task_id=task.id,
+                        category="citation",
+                        severity="medium",
+                        problem=("Evidence source has low authority."),
+                        correction=(
+                            "Prefer official documentation, "
+                            "primary sources, or stronger evidence."
+                        ),
+                    )
+                )
+
+            if item.support_strength == "weak":
+                issues.append(
+                    EditorialIssue(
+                        task_id=task.id,
+                        category="unsupported_claim",
+                        severity="medium",
+                        problem=("Evidence only weakly supports the associated claim."),
+                        correction=("Narrow the claim or replace the evidence."),
+                    )
+                )
+
+    return issues
+
+
 def verify_citations(
     *,
     markdown: str,
@@ -205,6 +260,11 @@ def verify_citations(
         )
 
         allowed_urls = _task_evidence_urls(
+            task,
+            evidence_by_id,
+        )
+
+        task_evidence_by_url = _task_evidence_by_url(
             task,
             evidence_by_id,
         )
