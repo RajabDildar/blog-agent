@@ -212,6 +212,30 @@ def route_after_editor(
         if task is None:
             raise ValueError(f"Unknown task ID {task_id}.")
 
+        evidence_by_id = {
+            evidence.id: evidence
+            for evidence in state.get(
+                "evidence",
+                [],
+            )
+        }
+
+        task_evidence = []
+
+        for evidence_id in task.evidence_refs:
+            evidence = evidence_by_id.get(
+                evidence_id,
+            )
+
+            if evidence is None:
+                raise ValueError(
+                    f"Task {task.id} references unknown evidence ID: {evidence_id}"
+                )
+
+            task_evidence.append(
+                evidence,
+            )
+
         sends.append(
             Send(
                 "revision",
@@ -219,6 +243,7 @@ def route_after_editor(
                     "task": task.model_dump(),
                     "section": section.body_markdown,
                     "issues": issue_map[task_id],
+                    "evidence": [evidence.model_dump() for evidence in task_evidence],
                 },
             )
         )

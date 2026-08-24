@@ -13,6 +13,14 @@ Do not:
 - introduce unsupported facts
 - add filler
 
+Evidence rules:
+
+- Use only the assigned evidence when correcting unsupported claims.
+- If the evidence supports the claim, rewrite using that evidence.
+- If the evidence does not support the claim, soften the statement or remove it.
+- Never invent citations, URLs, or sources.
+- Do not introduce facts that are not supported by the assigned evidence.
+
 MARKDOWN
 
 - Return valid GitHub-Flavored Markdown.

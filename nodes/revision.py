@@ -9,6 +9,7 @@ from config.settings import (
 from prompts.revision import REVISION_SYSTEM
 from schemas.models import (
     EditorialIssue,
+    ResearchEvidence,
     SectionOutput,
     Task,
 )
@@ -34,6 +35,14 @@ def revision_node(
 
     issues = [EditorialIssue(**issue) for issue in payload["issues"]]
 
+    evidence = [
+        ResearchEvidence(**item)
+        for item in payload.get(
+            "evidence",
+            [],
+        )
+    ]
+
     reviser = revision_llm.with_structured_output(
         SectionOutput,
         method="json_mode",
@@ -51,7 +60,9 @@ def revision_node(
                     f"Task:\n"
                     f"{task.model_dump()}\n\n"
                     f"Editor issues:\n"
-                    f"{[i.model_dump() for i in issues]}"
+                    f"{[i.model_dump() for i in issues]}\n\n"
+                    f"Assigned evidence:\n"
+                    f"{[item.model_dump() for item in evidence]}"
                 )
             ),
         ],
