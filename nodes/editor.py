@@ -8,6 +8,7 @@ from schemas.models import (
     EditorialIssue,
     EditorialReview,
     Plan,
+    ResearchEvidence,
 )
 from schemas.state import State
 from services.llm import gemini_llm
@@ -50,6 +51,20 @@ def _merge_editorial_issues(
     return merged
 
 
+def build_editor_evidence_sheet(
+    evidence: list[ResearchEvidence],
+) -> list[dict]:
+    return [
+        {
+            "id": item.id,
+            "claim": item.claim,
+            "source_title": item.source_title,
+            "url": item.url,
+        }
+        for item in evidence
+    ]
+
+
 def editor_node(
     state: State,
 ) -> dict:
@@ -61,6 +76,13 @@ def editor_node(
     citation_issues = state.get(
         "citation_issues",
         [],
+    )
+
+    evidence_sheet = build_editor_evidence_sheet(
+        state.get(
+            "evidence",
+            [],
+        )
     )
 
     reviewer = gemini_llm.with_structured_output(
@@ -75,6 +97,8 @@ def editor_node(
                     f"Topic: {state['topic']}\n\n"
                     f"Plan:\n"
                     f"{plan.model_dump()}\n\n"
+                    f"Evidence sheet:\n"
+                    f"{evidence_sheet}\n\n"
                     f"Deterministic citation issues:\n"
                     f"{[issue.model_dump() for issue in citation_issues]}\n\n"
                     f"Article:\n"
