@@ -23,6 +23,10 @@ def test_editor_evidence_sheet_is_compact():
             "claim": "Cloudflare R2 provides S3 compatibility.",
             "source_title": "Cloudflare R2 documentation",
             "url": "https://developers.cloudflare.com/r2/",
+            "source_type": "unknown",
+            "authority_score": 0.0,
+            "support_strength": "weak",
+            "confidence_score": 0.0,
         }
     ]
 
