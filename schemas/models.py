@@ -22,6 +22,16 @@ SupportStrength = Literal[
 ]
 
 
+def support_strength_score(
+    support_strength: SupportStrength,
+) -> float:
+    return {
+        "direct": 1.0,
+        "indirect": 0.6,
+        "weak": 0.3,
+    }[support_strength]
+
+
 class Task(BaseModel):
     id: int
     title: str
@@ -119,6 +129,12 @@ class ResearchEvidence(BaseModel):
     support_strength: SupportStrength = "weak"
 
     confidence_score: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+    )
+
+    quality_score: float = Field(
         default=0.0,
         ge=0.0,
         le=1.0,

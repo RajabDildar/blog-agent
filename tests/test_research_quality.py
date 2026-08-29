@@ -317,3 +317,15 @@ def test_research_evidence_accepts_grounding_metadata():
 
     assert evidence.support_strength == "direct"
     assert evidence.confidence_score == 0.9
+
+
+def test_research_evidence_accepts_quality_score():
+    evidence = ResearchEvidence(
+        id=1,
+        claim="Example claim",
+        source_title="Example source",
+        url="https://example.com",
+        quality_score=0.8,
+    )
+
+    assert evidence.quality_score == 0.8
