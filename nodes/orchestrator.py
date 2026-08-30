@@ -45,6 +45,20 @@ def validate_plan_evidence_refs(
                 )
 
 
+def _sort_planner_evidence(
+    evidence: list[ResearchEvidence],
+) -> list[ResearchEvidence]:
+    return sorted(
+        evidence,
+        key=lambda item: (
+            -item.quality_score,
+            -item.authority_score,
+            -item.confidence_score,
+            item.id,
+        ),
+    )
+
+
 def orchestrator_node(
     state: State,
 ) -> dict:
@@ -53,6 +67,10 @@ def orchestrator_node(
     evidence = state.get(
         "evidence",
         [],
+    )
+
+    sorted_evidence = _sort_planner_evidence(
+        evidence,
     )
 
     planner_evidence = [
@@ -64,7 +82,7 @@ def orchestrator_node(
             "quality_score": item.quality_score,
             "confidence_score": item.confidence_score,
         }
-        for item in evidence
+        for item in sorted_evidence
     ]
 
     plan = planner.invoke(
