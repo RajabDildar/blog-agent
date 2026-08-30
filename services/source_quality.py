@@ -18,6 +18,21 @@ OFFICIAL_DOC_DOMAINS = {
     "docs.langchain.com",
     "ai.google.dev",
     "platform.openai.com",
+    "developers.google.com",
+    "docs.github.com",
+    "developer.mozilla.org",
+    "kubernetes.io",
+    "docs.docker.com",
+}
+
+
+OFFICIAL_ORGANIZATION_GITHUB = {
+    "langchain-ai",
+    "google",
+    "openai",
+    "modelcontextprotocol",
+    "microsoft",
+    "cloudflare",
 }
 
 
@@ -33,10 +48,8 @@ ACADEMIC_SUFFIXES = (".edu",)
 STANDARDS_DOMAINS = {
     "ietf.org",
     "w3.org",
+    "iso.org",
 }
-
-
-GITHUB_DOMAIN = "github.com"
 
 
 REPUTABLE_INDUSTRY_DOMAINS = {
@@ -47,11 +60,22 @@ REPUTABLE_INDUSTRY_DOMAINS = {
 }
 
 
+LOW_QUALITY_DOMAINS = {
+    "medium.com",
+    "dev.to",
+    "towardsdatascience.com",
+    "substack.com",
+}
+
+
 VENDOR_BLOG_INDICATORS = (
     "/blog/",
     "/resources/",
     "/insights/",
 )
+
+
+GITHUB_DOMAIN = "github.com"
 
 
 def _hostname(url: str) -> str:
@@ -60,12 +84,26 @@ def _hostname(url: str) -> str:
     return (parsed.hostname or "").lower()
 
 
+def _github_owner(url: str) -> str | None:
+    parsed = urlparse(url)
+
+    if parsed.hostname != GITHUB_DOMAIN:
+        return None
+
+    parts = [part for part in parsed.path.split("/") if part]
+
+    if len(parts) < 1:
+        return None
+
+    return parts[0].lower()
+
+
 def classify_source(url: str) -> SourceQuality:
     """
-    Classify source authority using deterministic URL heuristics.
+    Deterministically classify source authority.
 
-    This is intentionally conservative.
-    It provides metadata for ranking, not final truth.
+    This metadata is used for evidence ranking.
+    It does not prove source correctness.
     """
 
     hostname = _hostname(url)
@@ -101,9 +139,23 @@ def classify_source(url: str) -> SourceQuality:
         )
 
     if hostname == GITHUB_DOMAIN:
+        owner = _github_owner(url)
+
+        if owner in OFFICIAL_ORGANIZATION_GITHUB:
+            return SourceQuality(
+                source_type="github_repository",
+                authority_score=0.9,
+            )
+
         return SourceQuality(
             source_type="github_repository",
-            authority_score=0.85,
+            authority_score=0.75,
+        )
+
+    if hostname in LOW_QUALITY_DOMAINS:
+        return SourceQuality(
+            source_type="unknown",
+            authority_score=0.25,
         )
 
     if hostname in REPUTABLE_INDUSTRY_DOMAINS:
