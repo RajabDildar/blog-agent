@@ -4,6 +4,7 @@ from datetime import (
 )
 
 from nodes.research import (
+    apply_post_extraction_evidence_gate,
     apply_research_quality_gate,
 )
 from schemas.models import ResearchEvidence
@@ -329,3 +330,48 @@ def test_research_evidence_accepts_quality_score():
     )
 
     assert evidence.quality_score == 0.8
+
+
+def test_post_extraction_gate_removes_weak_evidence():
+    evidence = [
+        ResearchEvidence(
+            id=1,
+            claim="weak claim",
+            source_title="weak source",
+            url="https://example.com",
+            quality_score=0.2,
+        ),
+        ResearchEvidence(
+            id=2,
+            claim="strong claim",
+            source_title="strong source",
+            url="https://example.org",
+            quality_score=0.8,
+        ),
+    ]
+
+    result = apply_post_extraction_evidence_gate(
+        evidence,
+    )
+
+    assert [item.id for item in result] == [2]
+
+
+def test_post_extraction_gate_keeps_moderate_quality_evidence():
+    evidence = [
+        ResearchEvidence(
+            id=1,
+            claim="moderate claim",
+            source_title="moderate source",
+            url="https://example.com",
+            quality_score=0.55,
+            relevance="supports claim",
+        ),
+    ]
+
+    result = apply_post_extraction_evidence_gate(
+        evidence,
+    )
+
+    assert len(result) == 1
+    assert result[0].id == 1

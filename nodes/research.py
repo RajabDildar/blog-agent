@@ -40,6 +40,9 @@ TIME_SENSITIVE_KEYWORDS = {
 
 STALE_TIME_SENSITIVE_DAYS = 365
 
+MIN_EVIDENCE_QUALITY_SCORE = 0.45
+EVIDENCE_WARNING_QUALITY_SCORE = 0.65
+
 
 def _result_score(
     result: dict,
@@ -241,6 +244,34 @@ def apply_research_quality_gate(
     return selected
 
 
+def apply_post_extraction_evidence_gate(
+    evidence: list[ResearchEvidence],
+) -> list[ResearchEvidence]:
+    """
+    Apply deterministic validation after LLM evidence extraction.
+
+    The extraction model can select weak evidence even when the
+    initial Tavily filtering was strong. This gate prevents low-quality
+    evidence from reaching planning.
+    """
+
+    validated: list[ResearchEvidence] = []
+
+    for item in evidence:
+        if item.quality_score < MIN_EVIDENCE_QUALITY_SCORE:
+            continue
+
+        if item.quality_score < EVIDENCE_WARNING_QUALITY_SCORE and not item.relevance:
+            item.relevance = (
+                "Evidence passed the minimum quality threshold "
+                "but should be reviewed because quality is moderate."
+            )
+
+        validated.append(item)
+
+    return validated
+
+
 def research_node(
     state: State,
 ) -> dict:
@@ -332,6 +363,10 @@ def research_node(
             start=1,
         )
     ]
+
+    evidence = apply_post_extraction_evidence_gate(
+        evidence,
+    )
 
     return {
         "evidence": evidence,
