@@ -42,6 +42,9 @@ STALE_TIME_SENSITIVE_DAYS = 365
 
 MIN_EVIDENCE_QUALITY_SCORE = 0.45
 EVIDENCE_WARNING_QUALITY_SCORE = 0.65
+SOURCE_TYPE_LIMITS = {
+    "vendor_blog": 2,
+}
 
 
 def _result_score(
@@ -222,16 +225,32 @@ def apply_research_quality_gate(
     )
 
     domain_counts: dict[str, int] = defaultdict(int)
+    source_type_counts: dict[str, int] = defaultdict(int)
+
     selected: list[dict] = []
 
     for result in ranked:
         domain = _result_domain(result)
 
+        source_type = result.get(
+            "source_type",
+            "unknown",
+        )
+
         if domain and domain_counts[domain] >= max_results_per_domain:
+            continue
+
+        source_limit = SOURCE_TYPE_LIMITS.get(
+            source_type,
+        )
+
+        if source_limit is not None and source_type_counts[source_type] >= source_limit:
             continue
 
         if domain:
             domain_counts[domain] += 1
+
+        source_type_counts[source_type] += 1
 
         selected.append(
             classify_result_freshness(

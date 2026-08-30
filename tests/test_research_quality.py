@@ -375,3 +375,65 @@ def test_post_extraction_gate_keeps_moderate_quality_evidence():
 
     assert len(result) == 1
     assert result[0].id == 1
+
+
+def test_research_quality_gate_limits_low_quality_source_types():
+    results = [
+        {
+            "title": "Vendor blog 1",
+            "url": "https://example.com/blog/a",
+            "score": 0.9,
+            "content": "content",
+        },
+        {
+            "title": "Vendor blog 2",
+            "url": "https://example.com/blog/b",
+            "score": 0.85,
+            "content": "content",
+        },
+        {
+            "title": "Vendor blog 3",
+            "url": "https://example.com/blog/c",
+            "score": 0.8,
+            "content": "content",
+        },
+    ]
+
+    result = apply_research_quality_gate(
+        results,
+        research_focus=[],
+        max_results_per_domain=10,
+    )
+
+    vendor_blogs = [item for item in result if item["source_type"] == "vendor_blog"]
+
+    assert len(vendor_blogs) <= 2
+
+
+def test_vendor_blog_source_type_is_limited():
+    results = [
+        make_result(
+            url="https://vendor.com/blog/one",
+            score=0.95,
+        ),
+        make_result(
+            url="https://vendor.com/blog/two",
+            score=0.90,
+        ),
+        make_result(
+            url="https://vendor.com/blog/three",
+            score=0.85,
+        ),
+    ]
+
+    quality_results = apply_research_quality_gate(
+        results,
+        research_focus=[],
+        max_results_per_domain=10,
+    )
+
+    vendor_results = [
+        result for result in quality_results if result["source_type"] == "vendor_blog"
+    ]
+
+    assert len(vendor_results) <= 2
