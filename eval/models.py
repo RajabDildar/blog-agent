@@ -104,6 +104,39 @@ class EvaluationMetrics(BaseModel):
         ge=0,
     )
 
+    official_source_ratio: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+    )
+
+    average_authority_score: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+    )
+
+    average_quality_score: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+    )
+
+    weak_source_ratio: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+    )
+
+    unique_domain_count: int = Field(
+        default=0,
+        ge=0,
+    )
+
+    source_type_distribution: dict[str, int] = Field(
+        default_factory=dict,
+    )
+
 
 class EvaluationRun(BaseModel):
     topic: str

@@ -65,6 +65,7 @@ def load_topics(
 
 def _build_metrics(
     run_id: str,
+    evidence: list | None = None,
 ) -> EvaluationMetrics:
     diagnostics = load_diagnostics(
         run_id,
@@ -73,6 +74,7 @@ def _build_metrics(
     return EvaluationMetrics(
         **extract_metrics(
             diagnostics,
+            evidence=evidence,
         )
     )
 
@@ -87,6 +89,10 @@ def _build_success_run(
 ) -> EvaluationRun:
     metrics = _build_metrics(
         run_id,
+        evidence=result.get(
+            "evidence",
+            [],
+        ),
     )
 
     evaluation = evaluate_article(

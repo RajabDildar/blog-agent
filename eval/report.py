@@ -74,6 +74,15 @@ def build_report(
                 (f"- Revision count: {run.metrics.revision_count}"),
                 (f"- Generation time: {run.metrics.generation_time_seconds:.2f}s"),
                 f"- Retries: {run.metrics.retries}",
+                (f"- Official source ratio: {run.metrics.official_source_ratio:.2f}"),
+                (
+                    f"- Average authority score: "
+                    f"{run.metrics.average_authority_score:.2f}"
+                ),
+                (f"- Average quality score: {run.metrics.average_quality_score:.2f}"),
+                (f"- Weak source ratio: {run.metrics.weak_source_ratio:.2f}"),
+                (f"- Unique domains: {run.metrics.unique_domain_count}"),
+                (f"- Source type distribution: {run.metrics.source_type_distribution}"),
                 f"- Rate-limit recoveries: {run.rate_limit_recoveries}",
                 (f"- Rate-limit wait: {run.rate_limit_wait_seconds:.2f}s"),
             ]

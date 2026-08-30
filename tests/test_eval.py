@@ -1,5 +1,6 @@
 import json
 import time
+from types import SimpleNamespace
 
 import pytest
 
@@ -18,7 +19,7 @@ from eval.run_eval import (
     load_topics,
     run_evaluation,
 )
-from eval.score import extract_metrics
+from eval.score import extract_evidence_metrics, extract_metrics
 from services.rate_limits import (
     RateLimitInfo,
     RateLimitRetryExhausted,
@@ -489,3 +490,61 @@ def test_report_supports_mixed_recovery_results(
     assert "Rate-limit recoveries: 2" in report
     assert "Rate-limit wait: 12.50s" in report
     assert "Rate-limit recoveries: 1" in report
+
+
+def test_extract_evidence_metrics():
+    evidence = [
+        SimpleNamespace(
+            source_type="official_documentation",
+            authority_score=1.0,
+            quality_score=0.9,
+            support_strength="direct",
+            url="https://docs.example.com/a",
+        ),
+        SimpleNamespace(
+            source_type="vendor_blog",
+            authority_score=0.5,
+            quality_score=0.4,
+            support_strength="weak",
+            url="https://blog.example.com/b",
+        ),
+    ]
+
+    metrics = extract_evidence_metrics(
+        evidence,
+    )
+
+    assert metrics["official_source_ratio"] == 0.5
+    assert metrics["average_authority_score"] == 0.75
+    assert metrics["average_quality_score"] == 0.65
+    assert metrics["weak_source_ratio"] == 0.5
+    assert metrics["unique_domain_count"] == 2
+
+
+def test_extract_metrics_includes_evidence_metrics_when_provided():
+    from types import SimpleNamespace
+
+    metrics = extract_metrics(
+        {
+            "provider_attempts": {},
+            "image_attempts": 0,
+            "editorial_revisions": 0,
+            "duration_seconds": 1,
+            "retry_count": 0,
+        },
+        evidence=[
+            SimpleNamespace(
+                source_type="official_documentation",
+                authority_score=1.0,
+                quality_score=0.9,
+                support_strength="direct",
+                url="https://docs.example.com",
+            )
+        ],
+    )
+
+    assert metrics["official_source_ratio"] == 1.0
+    assert metrics["average_authority_score"] == 1.0
+    assert metrics["average_quality_score"] == 0.9
+    assert metrics["weak_source_ratio"] == 0.0
+    assert metrics["unique_domain_count"] == 1
