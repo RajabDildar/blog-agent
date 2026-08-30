@@ -2,6 +2,7 @@ import pytest
 
 from graph.main_graph import fanout
 from nodes.orchestrator import (
+    orchestrator_node,
     validate_plan_evidence_refs,
 )
 from schemas.models import (
@@ -10,6 +11,7 @@ from schemas.models import (
     ResearchPack,
     Task,
 )
+from schemas.state import State
 
 
 def make_task(
@@ -479,3 +481,57 @@ def test_worker_includes_evidence_quality_metadata():
     assert evidence.authority_score == 0.95
     assert evidence.support_strength == "direct"
     assert evidence.confidence_score == 0.9
+
+
+def test_orchestrator_sends_quality_metadata_to_planner(monkeypatch):
+    captured_messages = []
+
+    class FakePlanner:
+        def invoke(self, messages):
+            captured_messages.extend(messages)
+
+            from schemas.models import Plan
+
+            return Plan(
+                blog_title="Test",
+                thesis="Test thesis",
+                opening_angle="Test opening",
+                reader_promise="Test promise",
+                audience="Developers",
+                tone="Technical",
+                tasks=[],
+            )
+
+    monkeypatch.setattr(
+        "nodes.orchestrator.gemini_llm",
+        type(
+            "FakeLLM",
+            (),
+            {"with_structured_output": lambda self, _: FakePlanner()},
+        )(),
+    )
+
+    state: State = {
+        "topic": "AI agents",
+        "research_brief": "",
+        "evidence": [
+            ResearchEvidence(
+                id=1,
+                claim="Official API documentation",
+                source_title="Example Docs",
+                url="https://example.com",
+                source_type="official_documentation",
+                authority_score=1.0,
+                confidence_score=0.9,
+                quality_score=0.95,
+            )
+        ],
+    }
+
+    orchestrator_node(state)
+
+    planner_input = captured_messages[-1].content
+
+    assert "official_documentation" in planner_input
+    assert "1.0" in planner_input
+    assert "0.95" in planner_input

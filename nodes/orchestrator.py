@@ -55,6 +55,18 @@ def orchestrator_node(
         [],
     )
 
+    planner_evidence = [
+        {
+            "id": item.id,
+            "claim": item.claim,
+            "source_type": item.source_type,
+            "authority_score": item.authority_score,
+            "quality_score": item.quality_score,
+            "confidence_score": item.confidence_score,
+        }
+        for item in evidence
+    ]
+
     plan = planner.invoke(
         [
             SystemMessage(
@@ -66,7 +78,7 @@ def orchestrator_node(
                     f"Research brief:\n"
                     f"{state.get('research_brief', '')}\n\n"
                     f"Research evidence:\n"
-                    f"{evidence}"
+                    f"{planner_evidence}"
                 )
             ),
         ]
