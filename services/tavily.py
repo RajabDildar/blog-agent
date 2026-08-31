@@ -2,6 +2,8 @@ import os
 
 from tavily import TavilyClient
 
+from services.run_diagnostics import get_current_diagnostics
+
 client = TavilyClient(
     api_key=os.environ["TAVILY_API_KEY"],
 )
@@ -26,6 +28,10 @@ def tavily_search(
     *,
     max_results: int = 5,
 ) -> list[dict]:
+    diagnostics = get_current_diagnostics()
+    if diagnostics is not None:
+        diagnostics.record_provider_call("tavily")
+
     response = client.search(
         query=query,
         search_depth="advanced",

@@ -45,3 +45,17 @@ Configure the evaluation judge separately from the production pipeline:
 
 ```text
 EVAL_JUDGE_MODEL=gemini-3.1-flash-lite
+```
+
+## Reproducible experiments
+
+Run a named experiment with caller-supplied pipeline provenance:
+
+```bash
+uv run python -m eval.run_eval \
+  --experiment-name phase8-remediation-baseline \
+  --purpose "Baseline after multimodal judge semantics" \
+  --pipeline-commit 70765747323e0560c109e5060dca3eac23918a05
+```
+
+Each experiment writes an immutable `manifest.json`, `results.json`, `report.md`, copied final articles, and diagnostics. Existing successful, fully scored topics are skipped; use `--rerun-failed` to retry incomplete or failed topics. The judge receives generated image bytes as Gemini multimodal inputs, so scores from pre-Step-0 text-only judging are not directly comparable.

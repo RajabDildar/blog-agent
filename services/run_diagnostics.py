@@ -41,6 +41,7 @@ class RunDiagnostics:
         self.retry_count = 0
 
         self.provider_attempts: dict[str, int] = defaultdict(int)
+        self.provider_calls: dict[str, int] = defaultdict(int)
 
         self.markdown_deterministic_repairs = 0
         self.markdown_llm_repairs = 0
@@ -79,6 +80,7 @@ class RunDiagnostics:
             "current_provider": self.current_provider,
             "retry_count": self.retry_count,
             "provider_attempts": dict(self.provider_attempts),
+            "provider_calls": dict(self.provider_calls),
             "markdown": {
                 "deterministic_repairs": (self.markdown_deterministic_repairs),
                 "llm_repairs": (self.markdown_llm_repairs),
@@ -147,6 +149,12 @@ class RunDiagnostics:
                 provider=provider,
                 attempt=attempt,
             )
+
+    def record_provider_call(self, provider: str) -> None:
+        """Record one outbound provider invocation, separate from node attempts."""
+        with self._lock:
+            self.provider_calls[provider] += 1
+            self._record_event(event="provider_call", provider=provider)
 
     def node_succeeded(
         self,
@@ -321,6 +329,13 @@ class RunDiagnostics:
         diagnostics.provider_attempts.update(
             data.get(
                 "provider_attempts",
+                {},
+            )
+        )
+
+        diagnostics.provider_calls.update(
+            data.get(
+                "provider_calls",
                 {},
             )
         )

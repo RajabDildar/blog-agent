@@ -1,15 +1,24 @@
 import argparse
+import hashlib
 import json
+import platform
 import time
+from datetime import UTC, datetime
+from importlib.metadata import version
 from pathlib import Path
 
 from config.settings import (
     EVAL_BETWEEN_RUN_DELAY_SECONDS,
     EVAL_MAX_RATE_LIMIT_WAIT_SECONDS,
     EVAL_RESUME_ATTEMPT_LIMIT,
+    EVAL_JUDGE_MODEL,
+    GEMINI_MODEL,
+    REVISION_MODEL,
+    WRITER_MODEL,
 )
 from eval.models import (
     EvaluationMetrics,
+    EvaluationManifest,
     EvaluationRun,
 )
 from eval.report import (
@@ -31,10 +40,50 @@ from services.rate_limits import (
 from services.run_diagnostics import (
     load_diagnostics,
 )
+from services.citation_verification import verify_citations
 
 DEFAULT_TOPICS_PATH = Path(__file__).parent / "topics.json"
 
 DEFAULT_OUTPUT_ROOT = Path(__file__).parent / "runs"
+
+
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
+def _locked_versions() -> dict[str, str]:
+    return {name: version(name) for name in ("langchain-google-genai", "pydantic", "tavily-python")}
+
+
+def _experiment_dir(experiment_name: str) -> Path:
+    if not experiment_name or Path(experiment_name).name != experiment_name:
+        raise ValueError("Experiment name must be a single non-empty path component.")
+    return DEFAULT_OUTPUT_ROOT / experiment_name
+
+
+def _write_manifest(output_dir: Path, manifest: EvaluationManifest) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "manifest.json").write_text(manifest.model_dump_json(indent=2), encoding="utf-8")
+
+
+def _copy_artifacts(*, output_dir: Path, run_id: str, result: dict, diagnostics: dict) -> tuple[str, str]:
+    articles_dir = output_dir / "articles"
+    diagnostics_dir = output_dir / "diagnostics"
+    articles_dir.mkdir(parents=True, exist_ok=True)
+    diagnostics_dir.mkdir(parents=True, exist_ok=True)
+    destination_article = articles_dir / f"{run_id}.md"
+    destination_article.write_text(result["final"], encoding="utf-8")
+    destination_diagnostics = diagnostics_dir / f"{run_id}.json"
+    destination_diagnostics.write_text(json.dumps(diagnostics, indent=2), encoding="utf-8")
+    return str(destination_article), str(destination_diagnostics)
+
+
+def _image_paths(result: dict) -> list[Path]:
+    paths = [Path(image["published_path"]) for image in result.get("image_results", [])]
+    missing = [path for path in paths if not path.is_file()]
+    if missing:
+        raise RuntimeError(f"Generated images are unavailable for evaluation: {missing}")
+    return paths
 
 
 def load_topics(
@@ -86,20 +135,26 @@ def _build_success_run(
     result: dict,
     rate_limit_recoveries: int,
     rate_limit_wait_seconds: float,
+    output_dir: Path,
 ) -> EvaluationRun:
-    metrics = _build_metrics(
-        run_id,
-        evidence=result.get(
-            "evidence",
-            [],
-        ),
+    diagnostics = load_diagnostics(run_id)
+    metrics = EvaluationMetrics(
+        **extract_metrics(
+            diagnostics,
+            evidence=result.get("evidence", []),
+        )
     )
-
-    evaluation = evaluate_article(
-        topic=topic,
-        plan=result["plan"],
-        article=result["final"],
-    )
+    citation_issues = verify_citations(markdown=result["final"], tasks=getattr(result["plan"], "tasks", []), evidence=result.get("evidence", []))
+    metrics.citation_issue_counts = {}
+    for issue in citation_issues:
+        key = f"{issue.severity}:{issue.category}"
+        metrics.citation_issue_counts[key] = metrics.citation_issue_counts.get(key, 0) + 1
+    article_artifact, diagnostics_artifact = _copy_artifacts(output_dir=output_dir, run_id=run_id, result=result, diagnostics=diagnostics)
+    try:
+        evaluation = evaluate_article(topic=topic, plan=result["plan"], article=result["final"], image_paths=_image_paths(result))
+        metrics.judge_calls = 1
+    except Exception as exc:
+        return EvaluationRun(topic=topic, run_id=run_id, status="failed", article_path=result.get("saved_path"), metrics=metrics, failure=f"JudgeError: {type(exc).__name__}: {exc}", rate_limit_recoveries=rate_limit_recoveries, rate_limit_wait_seconds=rate_limit_wait_seconds, article_artifact=article_artifact, diagnostics_artifact=diagnostics_artifact, citation_issues=[issue.model_dump(mode="json") for issue in citation_issues])
 
     return EvaluationRun(
         topic=topic,
@@ -112,6 +167,9 @@ def _build_success_run(
         metrics=metrics,
         rate_limit_recoveries=rate_limit_recoveries,
         rate_limit_wait_seconds=rate_limit_wait_seconds,
+        article_artifact=article_artifact,
+        diagnostics_artifact=diagnostics_artifact,
+        citation_issues=[issue.model_dump(mode="json") for issue in citation_issues],
     )
 
 
@@ -192,6 +250,7 @@ def _run_topic(
     run_id: str,
     max_rate_limit_wait_seconds: float,
     resume_attempt_limit: int,
+    output_dir: Path,
 ) -> EvaluationRun:
     rate_limit_recoveries = 0
     rate_limit_wait_seconds = 0.0
@@ -269,6 +328,7 @@ def _run_topic(
         result=result,
         rate_limit_recoveries=rate_limit_recoveries,
         rate_limit_wait_seconds=rate_limit_wait_seconds,
+        output_dir=output_dir,
     )
 
 
@@ -279,12 +339,14 @@ def run_evaluation(
     max_rate_limit_wait_seconds: float = (EVAL_MAX_RATE_LIMIT_WAIT_SECONDS),
     between_run_delay_seconds: float = (EVAL_BETWEEN_RUN_DELAY_SECONDS),
     resume_attempt_limit: int = (EVAL_RESUME_ATTEMPT_LIMIT),
+    rerun_failed: bool = False,
+    manifest: EvaluationManifest | None = None,
 ) -> list[EvaluationRun]:
     runs = load_results(
         output_dir,
     )
 
-    completed_topics = {evaluation_run.topic for evaluation_run in runs}
+    completed_topics = {evaluation_run.topic for evaluation_run in runs if evaluation_run.status == "success" and evaluation_run.evaluation is not None}
 
     topics_to_run = [topic for topic in topics if topic not in completed_topics]
 
@@ -296,6 +358,7 @@ def run_evaluation(
             run_id=run_id,
             max_rate_limit_wait_seconds=(max_rate_limit_wait_seconds),
             resume_attempt_limit=resume_attempt_limit,
+            output_dir=output_dir,
         )
 
         _replace_run(
@@ -306,6 +369,7 @@ def run_evaluation(
         write_report(
             runs=runs,
             output_dir=output_dir,
+            manifest=manifest,
         )
 
         if index < len(topics_to_run) - 1 and between_run_delay_seconds > 0:
@@ -328,10 +392,13 @@ def parse_args():
     )
 
     parser.add_argument(
-        "--output-dir",
-        type=Path,
-        default=DEFAULT_OUTPUT_ROOT,
+        "--experiment-name",
+        required=True,
     )
+    parser.add_argument("--purpose", required=True)
+    parser.add_argument("--pipeline-commit", required=True)
+    parser.add_argument("--pipeline-dirty", action="store_true")
+    parser.add_argument("--rerun-failed", action="store_true")
 
     parser.add_argument(
         "--max-rate-limit-wait-seconds",
@@ -361,21 +428,31 @@ def main():
         args.topics,
     )
 
+    output_dir = _experiment_dir(args.experiment_name)
+    manifest = EvaluationManifest(experiment_name=args.experiment_name, purpose=args.purpose, pipeline_commit=args.pipeline_commit, pipeline_dirty=args.pipeline_dirty, started_at=_utc_now(), seed_topics_path=str(args.topics), seed_topics_sha256=hashlib.sha256(args.topics.read_bytes()).hexdigest(), writer_model=WRITER_MODEL, revision_model=REVISION_MODEL, pipeline_gemini_model=GEMINI_MODEL, judge_model=EVAL_JUDGE_MODEL, judge_image_input=True, phase8_settings={"max_editorial_revisions": 1}, python_version=platform.python_version(), locked_package_versions=_locked_versions())
+    _write_manifest(output_dir, manifest)
     runs = run_evaluation(
         topics=topics,
-        output_dir=args.output_dir,
+        output_dir=output_dir,
         max_rate_limit_wait_seconds=(args.max_rate_limit_wait_seconds),
         between_run_delay_seconds=(args.between_run_delay_seconds),
         resume_attempt_limit=args.resume_attempt_limit,
+        rerun_failed=args.rerun_failed,
+        manifest=manifest,
     )
+    manifest.finished_at = _utc_now()
+    manifest.success_count = sum(item.status == "success" and item.evaluation is not None for item in runs)
+    manifest.failure_count = len(runs) - manifest.success_count
+    _write_manifest(output_dir, manifest)
+    write_report(runs=runs, output_dir=output_dir, manifest=manifest)
 
     successful = sum(evaluation_run.status == "success" for evaluation_run in runs)
 
     print(f"Evaluation complete: {successful}/{len(runs)} runs succeeded.")
 
-    print(f"Results: {args.output_dir / 'results.json'}")
+    print(f"Results: {output_dir / 'results.json'}")
 
-    print(f"Report: {args.output_dir / 'report.md'}")
+    print(f"Report: {output_dir / 'report.md'}")
 
 
 if __name__ == "__main__":

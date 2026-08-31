@@ -28,6 +28,12 @@ from services.rate_limits import (
 
 def test_extract_metrics_from_diagnostics():
     diagnostics = {
+        "provider_calls": {
+            "gemini": 3,
+            "groq": 4,
+            "tavily": 2,
+            "cloudflare_image": 3,
+        },
         "provider_attempts": {
             "gemini": 3,
             "groq": 4,
@@ -48,6 +54,7 @@ def test_extract_metrics_from_diagnostics():
         "revision_count": 1,
         "generation_time_seconds": 42.5,
         "retries": 2,
+        "node_attempts": 9,
     }
 
 

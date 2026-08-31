@@ -5,6 +5,8 @@ import time
 
 import requests
 
+from services.run_diagnostics import get_current_diagnostics
+
 MODEL = os.getenv(
     "CLOUDFLARE_IMAGE_MODEL",
     "@cf/black-forest-labs/flux-1-schnell",
@@ -127,6 +129,9 @@ def cloudflare_generate_image_bytes(
         attempts = attempt
 
         try:
+            diagnostics = get_current_diagnostics()
+            if diagnostics is not None:
+                diagnostics.record_provider_call("cloudflare_image")
             response = requests.post(
                 url,
                 headers={

@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 
@@ -104,11 +106,17 @@ class EvaluationMetrics(BaseModel):
         ge=0,
     )
 
+    node_attempts: int = Field(default=0, ge=0)
+    judge_calls: int = Field(default=0, ge=0)
+    citation_issue_counts: dict[str, int] = Field(default_factory=dict)
+
     official_source_ratio: float = Field(
         default=0.0,
         ge=0.0,
         le=1.0,
     )
+
+    unknown_source_ratio: float = Field(default=0.0, ge=0.0, le=1.0)
 
     average_authority_score: float = Field(
         default=0.0,
@@ -137,6 +145,8 @@ class EvaluationMetrics(BaseModel):
         default_factory=dict,
     )
 
+    authority_distribution: dict[str, int] = Field(default_factory=dict)
+
 
 class EvaluationRun(BaseModel):
     topic: str
@@ -162,3 +172,28 @@ class EvaluationRun(BaseModel):
         default=0,
         ge=0,
     )
+
+    article_artifact: str | None = None
+    diagnostics_artifact: str | None = None
+    citation_issues: list[dict] = Field(default_factory=list)
+
+
+class EvaluationManifest(BaseModel):
+    experiment_name: str = Field(min_length=1)
+    purpose: str = Field(min_length=1)
+    pipeline_commit: str
+    pipeline_dirty: bool
+    started_at: datetime
+    finished_at: datetime | None = None
+    seed_topics_path: str
+    seed_topics_sha256: str
+    writer_model: str
+    revision_model: str
+    pipeline_gemini_model: str
+    judge_model: str
+    judge_image_input: bool
+    phase8_settings: dict[str, str | int | float | bool]
+    python_version: str
+    locked_package_versions: dict[str, str]
+    success_count: int = Field(default=0, ge=0)
+    failure_count: int = Field(default=0, ge=0)
