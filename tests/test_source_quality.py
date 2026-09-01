@@ -67,5 +67,5 @@ def test_unknown_sources_score_lower():
 def test_low_quality_publishing_platforms_are_penalized():
     result = classify_source("https://medium.com/example/article")
 
-    assert result.source_type == "unknown"
+    assert result.source_type == "vendor_blog"
     assert result.authority_score <= 0.3

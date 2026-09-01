@@ -61,6 +61,13 @@ TAVILY_MAX_RESULTS_PER_DOMAIN = int(
     )
 )
 
+WEAK_SOURCE_AUTHORITY_THRESHOLD = float(
+    os.getenv(
+        "WEAK_SOURCE_AUTHORITY_THRESHOLD",
+        "0.5",
+    )
+)
+
 GROQ_MAX_CONCURRENT_GENERATIONS = int(
     os.getenv(
         "GROQ_MAX_CONCURRENT_GENERATIONS",

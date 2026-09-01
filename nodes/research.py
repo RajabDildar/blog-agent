@@ -1,8 +1,10 @@
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import (
     UTC,
     datetime,
 )
+from email.utils import parsedate_to_datetime
 from urllib.parse import urlparse
 
 from langchain_core.messages import (
@@ -16,13 +18,16 @@ from config.settings import (
 )
 from prompts.research import RESEARCH_SYSTEM
 from schemas.models import (
+    EXEMPT_AUTHORITATIVE_SOURCE_TYPES,
+    ExtractedResearchPack,
     ResearchEvidence,
-    ResearchPack,
 )
 from schemas.state import State
+from services.citation_verification import normalize_url
 from services.llm import gemini_llm
 from services.source_quality import (
     classify_source,
+    is_official_primary_source,
 )
 from services.tavily import tavily_search
 
@@ -40,8 +45,8 @@ TIME_SENSITIVE_KEYWORDS = {
 
 STALE_TIME_SENSITIVE_DAYS = 365
 
-MIN_EVIDENCE_QUALITY_SCORE = 0.45
-EVIDENCE_WARNING_QUALITY_SCORE = 0.65
+TIME_SENSITIVE_NEWS_TIME_RANGE = "year"
+
 SOURCE_TYPE_LIMITS = {
     "vendor_blog": 2,
 }
@@ -77,26 +82,42 @@ def _apply_source_quality(
     }
 
 
-def _research_ranking_score(
+def _research_ranking_sort_key(
     result: dict,
-) -> float:
-    relevance_score = _result_score(
-        result,
-    )
+) -> tuple:
+    """
+    Deterministic ranking: relevance first, authority as tie-breaker, URL last.
 
+    Roadmap policy: relevance descending; authority only as deterministic
+    tie-breaker or informational field; not an unexplained weighted combo.
+    """
+    relevance_score = _result_score(result)
     authority_score = float(
         result.get(
             "authority_score",
             0.0,
         )
     )
-
-    return relevance_score * 0.7 + authority_score * 0.3
+    return (
+        -relevance_score,
+        -authority_score,
+        result.get("url") or "",
+    )
 
 
 def _parse_published_at(
     published_at: str | None,
 ) -> datetime | None:
+    """
+    Parse publication date using standard library only.
+
+    Tavily docs: published_date is available with topic="news" and can be
+    RFC-style, e.g. "Tue, 11 Mar 2025 17:00:00 GMT", or ISO format.
+
+    Attempts:
+    1. ISO 8601 via fromisoformat
+    2. RFC 2822 via email.utils.parsedate_to_datetime
+    """
     if not published_at:
         return None
 
@@ -105,11 +126,22 @@ def _parse_published_at(
         "+00:00",
     )
 
+    parsed: datetime | None = None
+
     try:
         parsed = datetime.fromisoformat(
             normalized,
         )
     except ValueError:
+        parsed = None
+
+    if parsed is None:
+        try:
+            parsed = parsedate_to_datetime(published_at)
+        except (ValueError, TypeError, IndexError, OverflowError):
+            parsed = None
+
+    if parsed is None:
         return None
 
     if parsed.tzinfo is None:
@@ -139,8 +171,9 @@ def classify_result_freshness(
     now: datetime | None = None,
 ) -> dict:
     published_at = result.get("published_at")
+    source_type = result.get("source_type", "unknown")
 
-    classification = {
+    classification: dict[str, str] = {
         "freshness_status": "unknown",
         "freshness_warning": "",
     }
@@ -167,7 +200,26 @@ def classify_result_freshness(
 
     age_days = (current_time - published).days
 
-    if _is_time_sensitive(research_focus) and age_days > STALE_TIME_SENSITIVE_DAYS:
+    if source_type in EXEMPT_AUTHORITATIVE_SOURCE_TYPES:
+        if _is_time_sensitive(research_focus) and age_days > STALE_TIME_SENSITIVE_DAYS:
+            classification = {
+                "freshness_status": "exempt_authoritative_spec",
+                "freshness_warning": (
+                    "This authoritative source is more than "
+                    f"{STALE_TIME_SENSITIVE_DAYS} days old "
+                    "for a time-sensitive research focus. "
+                    "It is retained as stable foundational/specification "
+                    "material, but verify separately that any current "
+                    "announcements, pricing, release details, or "
+                    "time-sensitive claims are still accurate."
+                ),
+            }
+        else:
+            classification = {
+                "freshness_status": "exempt_authoritative_spec",
+                "freshness_warning": "",
+            }
+    elif _is_time_sensitive(research_focus) and age_days > STALE_TIME_SENSITIVE_DAYS:
         classification = {
             "freshness_status": "stale_warning",
             "freshness_warning": (
@@ -197,31 +249,38 @@ def apply_research_quality_gate(
     max_results_per_domain: int = (TAVILY_MAX_RESULTS_PER_DOMAIN),
     now: datetime | None = None,
 ) -> list[dict]:
+    """
+    Deterministic pre-extraction quality gate.
+
+    Order of operations (roadmap 8.2 + Step 1):
+    1. Relevance floor (drop below min_relevance_score)
+    2. Normalized-URL dedupe (keep highest-scoring copy)
+    3. Sort: relevance DESC, authority DESC tiebreak, URL ASC tiebreak
+    4. Per-domain cap + source-type cap
+    5. Freshness classification
+    """
     filtered = [
         _apply_source_quality(result)
         for result in results
         if _result_score(result) >= min_relevance_score
     ]
 
-    unique_by_url: dict[str, dict] = {}
+    unique_by_normalized_url: dict[str, dict] = {}
 
     for result in filtered:
-        url = result.get("url") or ""
-
-        if not url:
+        raw_url = result.get("url") or ""
+        if not raw_url:
             continue
+        normalized = normalize_url(raw_url)
 
-        existing = unique_by_url.get(url)
+        existing = unique_by_normalized_url.get(normalized)
 
         if existing is None or _result_score(result) > _result_score(existing):
-            unique_by_url[url] = result
+            unique_by_normalized_url[normalized] = result
 
     ranked = sorted(
-        unique_by_url.values(),
-        key=lambda result: (
-            -_research_ranking_score(result),
-            result.get("url") or "",
-        ),
+        unique_by_normalized_url.values(),
+        key=_research_ranking_sort_key,
     )
 
     domain_counts: dict[str, int] = defaultdict(int)
@@ -263,32 +322,133 @@ def apply_research_quality_gate(
     return selected
 
 
+@dataclass(frozen=True)
+class GroundingDiagnostics:
+    accepted_count: int
+    rejected_count: int
+    rejection_reasons: list[str]
+    no_official_primary_source: bool
+
+
+def ground_extracted_evidence(
+    extracted_pack: ExtractedResearchPack,
+    accepted_search_results: list[dict],
+) -> tuple[list[ResearchEvidence], GroundingDiagnostics]:
+    """
+    Deterministically ground every extracted evidence item in an accepted search result.
+
+    Policy (Step 1 P0):
+    - Every extracted evidence item must map to exactly one accepted search result URL.
+    - No match -> reject the item and record a deterministic reason.
+    - Canonical URL, title, source_type, authority, published_at, freshness,
+      and Tavily score come from the matched accepted search result,
+      NOT from the LLM extraction.
+    - LLM-owned fields (claim, supporting_text, relevance, support_strength,
+      confidence_score, quality_score) are preserved from the extraction.
+    """
+
+    normalized_lookup: dict[str, dict] = {}
+    for result in accepted_search_results:
+        raw_url = result.get("url") or ""
+        if not raw_url:
+            continue
+        normalized_lookup[normalize_url(raw_url)] = result
+
+    accepted: list[ResearchEvidence] = []
+    rejection_reasons: list[str] = []
+
+    for index, item in enumerate(extracted_pack.evidence):
+        extracted_url = item.url
+        normalized = normalize_url(extracted_url) if extracted_url else ""
+
+        matched = normalized_lookup.get(normalized) if normalized else None
+
+        if matched is None:
+            rejection_reasons.append(
+                f"Extraction item {index + 1}: URL does not match any "
+                f"accepted search result: {extracted_url!r}"
+            )
+            continue
+
+        canonical = matched
+        accepted.append(
+            ResearchEvidence(
+                id=0,
+                claim=item.claim,
+                source_title=canonical.get("title") or item.source_title,
+                url=canonical.get("url") or extracted_url,
+                supporting_text=item.supporting_text,
+                relevance=item.relevance,
+                published_at=canonical.get("published_at"),
+                freshness_status=canonical.get(
+                    "freshness_status",
+                    "unknown",
+                ),
+                freshness_warning=canonical.get(
+                    "freshness_warning",
+                    "",
+                ),
+                tavily_score=float(canonical.get("score") or 0),
+                source_type=canonical.get("source_type", "unknown"),
+                authority_score=float(
+                    canonical.get(
+                        "authority_score",
+                        0.0,
+                    )
+                ),
+                support_strength=item.support_strength,
+                confidence_score=item.confidence_score,
+                quality_score=0.0,
+            )
+        )
+
+    any_official = any(
+        is_official_primary_source(
+            source_type=item.source_type,
+            url=item.url,
+        )
+        for item in accepted
+    )
+
+    diagnostics = GroundingDiagnostics(
+        accepted_count=len(accepted),
+        rejected_count=len(extracted_pack.evidence) - len(accepted),
+        rejection_reasons=rejection_reasons,
+        no_official_primary_source=(not any_official),
+    )
+
+    return accepted, diagnostics
+
+
+def assign_final_evidence_ids(
+    grounded: list[ResearchEvidence],
+) -> list[ResearchEvidence]:
+    """
+    Assign final sequential IDs 1..N only after all deterministic filtering.
+
+    Roadmap 8.1 + Step 1 requirement: no gaps after post-extraction rejection.
+    """
+    return [
+        ResearchEvidence(
+            **{
+                **item.model_dump(),
+                "id": new_id,
+            }
+        )
+        for new_id, item in enumerate(grounded, start=1)
+    ]
+
+
 def apply_post_extraction_evidence_gate(
     evidence: list[ResearchEvidence],
 ) -> list[ResearchEvidence]:
     """
-    Apply deterministic validation after LLM evidence extraction.
+    Post-grounding validation without unexplained LLM hard gates.
 
-    The extraction model can select weak evidence even when the
-    initial Tavily filtering was strong. This gate prevents low-quality
-    evidence from reaching planning.
+    The old quality_score hard rejection is removed. quality_score is now
+    informational only. Retain the evidence list as-is after grounding.
     """
-
-    validated: list[ResearchEvidence] = []
-
-    for item in evidence:
-        if item.quality_score < MIN_EVIDENCE_QUALITY_SCORE:
-            continue
-
-        if item.quality_score < EVIDENCE_WARNING_QUALITY_SCORE and not item.relevance:
-            item.relevance = (
-                "Evidence passed the minimum quality threshold "
-                "but should be reviewed because quality is moderate."
-            )
-
-        validated.append(item)
-
-    return validated
+    return list(evidence)
 
 
 def research_node(
@@ -299,6 +459,18 @@ def research_node(
         [],
     )
 
+    research_focus = state.get(
+        "research_focus",
+        [],
+    )
+
+    time_sensitive = _is_time_sensitive(research_focus)
+
+    search_topic = "news" if time_sensitive else "general"
+    search_time_range: str | None = (
+        TIME_SENSITIVE_NEWS_TIME_RANGE if time_sensitive else None
+    )
+
     raw_results: list[dict] = []
 
     for query in queries[:5]:
@@ -306,15 +478,14 @@ def research_node(
             tavily_search(
                 query,
                 max_results=3,
+                topic=search_topic,
+                time_range=search_time_range,
             )
         )
 
     quality_results = apply_research_quality_gate(
         raw_results,
-        research_focus=state.get(
-            "research_focus",
-            [],
-        ),
+        research_focus=research_focus,
     )
 
     if not quality_results:
@@ -331,6 +502,9 @@ def research_node(
                 "title": result["title"],
                 "url": result["url"],
                 "score": result["score"],
+                "published_at": result.get("published_at"),
+                "freshness_status": result.get("freshness_status", "unknown"),
+                "freshness_warning": result.get("freshness_warning", ""),
                 "source_type": result.get(
                     "source_type",
                     "unknown",
@@ -343,14 +517,16 @@ def research_node(
                     f"Authority score: "
                     f"{result.get('authority_score', 0.0)}, "
                     f"Type: "
-                    f"{result.get('source_type', 'unknown')}"
+                    f"{result.get('source_type', 'unknown')}, "
+                    f"Freshness: "
+                    f"{result.get('freshness_status', 'unknown')}"
                 ),
                 "content": result["content"][:2000],
             }
         )
 
     extractor = gemini_llm.with_structured_output(
-        ResearchPack,
+        ExtractedResearchPack,
     )
 
     pack = extractor.invoke(
@@ -362,7 +538,7 @@ def research_node(
                 content=(
                     f"Topic: {state['topic']}\n\n"
                     f"Research focus:\n"
-                    f"{state.get('research_focus', [])}\n\n"
+                    f"{research_focus}\n\n"
                     f"Search results:\n"
                     f"{compact_results}"
                 )
@@ -370,24 +546,18 @@ def research_node(
         ]
     )
 
-    evidence = [
-        ResearchEvidence(
-            id=index,
-            **item.model_dump(
-                exclude={"id"},
-            ),
-        )
-        for index, item in enumerate(
-            pack.evidence,
-            start=1,
-        )
-    ]
-
-    evidence = apply_post_extraction_evidence_gate(
-        evidence,
+    grounded_evidence, grounding_diag = ground_extracted_evidence(
+        pack,
+        quality_results,
     )
 
+    grounded_evidence = apply_post_extraction_evidence_gate(
+        grounded_evidence,
+    )
+
+    final_evidence = assign_final_evidence_ids(grounded_evidence)
+
     return {
-        "evidence": evidence,
+        "evidence": final_evidence,
         "research_brief": pack.research_brief,
     }

@@ -109,7 +109,7 @@ def test_provider_exception_type_is_preserved(
     monkeypatch.setattr(
         research,
         "tavily_search",
-        lambda query, max_results=3: [
+        lambda query, max_results=3, **kwargs: [
             {
                 "url": "https://example.com/source",
                 "title": "Example Source",

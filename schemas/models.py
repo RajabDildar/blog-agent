@@ -22,6 +22,14 @@ SupportStrength = Literal[
 ]
 
 
+FreshnessStatus = Literal[
+    "fresh",
+    "stale_warning",
+    "unknown",
+    "exempt_authoritative_spec",
+]
+
+
 def support_strength_score(
     support_strength: SupportStrength,
 ) -> float:
@@ -30,6 +38,43 @@ def support_strength_score(
         "indirect": 0.6,
         "weak": 0.3,
     }[support_strength]
+
+
+OFFICIAL_PRIMARY_SOURCE_TYPES: frozenset[SourceType] = frozenset({
+    "official_documentation",
+    "government_source",
+    "academic_paper",
+    "official_company_announcement",
+    "standards_document",
+})
+
+
+EXEMPT_AUTHORITATIVE_SOURCE_TYPES: frozenset[SourceType] = frozenset({
+    "official_documentation",
+    "standards_document",
+    "academic_paper",
+    "github_repository",
+    "reputable_industry_source",
+})
+
+
+class ExtractedResearchEvidence(BaseModel):
+    claim: str
+    source_title: str
+    url: str
+    supporting_text: str = ""
+    relevance: str = ""
+    support_strength: SupportStrength = "weak"
+    confidence_score: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+    )
+
+
+class ExtractedResearchPack(BaseModel):
+    evidence: list[ExtractedResearchEvidence] = Field(default_factory=list)
+    research_brief: str = ""
 
 
 class Task(BaseModel):
@@ -117,6 +162,14 @@ class ResearchEvidence(BaseModel):
     relevance: str = ""
 
     published_at: str | None = None
+    freshness_status: FreshnessStatus = "unknown"
+    freshness_warning: str = ""
+
+    tavily_score: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+    )
 
     source_type: SourceType = "unknown"
 
@@ -138,6 +191,7 @@ class ResearchEvidence(BaseModel):
         default=0.0,
         ge=0.0,
         le=1.0,
+        description="Informational LLM extraction quality score. Not used as hard rejection gate.",
     )
 
 
