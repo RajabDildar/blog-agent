@@ -12,6 +12,8 @@ wheels/
 .codex
 docs/
 AGENTS.md
+CLAUDE.md
+.claude
 .env
 .pytest_cache
 eval/runs/

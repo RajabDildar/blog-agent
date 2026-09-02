@@ -53,6 +53,9 @@ def fanout(state: State):
     if plan is None:
         raise ValueError("Plan missing")
 
+    if not plan.tasks:
+        raise ValueError("Plan must contain at least one task.")
+
     evidence_by_id = {
         evidence.id: evidence
         for evidence in state.get(

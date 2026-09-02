@@ -2,8 +2,9 @@ import pytest
 
 from graph.main_graph import fanout
 from nodes.orchestrator import (
+    EvidenceInsufficiencyError,
     orchestrator_node,
-    validate_plan_evidence_refs,
+    validate_plan_contract,
 )
 from schemas.models import (
     Plan,
@@ -17,12 +18,14 @@ from schemas.state import State
 def make_task(
     *,
     task_id: int = 1,
+    title: str | None = None,
     requires_research: bool = False,
+    requires_citations: bool = False,
     evidence_refs: list[int] | None = None,
 ) -> Task:
     return Task(
         id=task_id,
-        title=f"Task {task_id}",
+        title=(f"Task {task_id}" if title is None else title),
         goal="Explain the topic clearly.",
         bullets=[
             "Explain the first point.",
@@ -31,6 +34,7 @@ def make_task(
         ],
         target_words=300,
         requires_research=requires_research,
+        requires_citations=requires_citations,
         evidence_refs=([] if evidence_refs is None else evidence_refs),
     )
 
@@ -121,7 +125,7 @@ def test_valid_evidence_refs_pass_validation() -> None:
         make_evidence(2),
     ]
 
-    validate_plan_evidence_refs(
+    validate_plan_contract(
         plan,
         evidence,
     )
@@ -140,7 +144,7 @@ def test_unknown_evidence_id_fails_deterministically() -> None:
         ValueError,
         match=("Task 4 references unknown evidence ID: 99"),
     ):
-        validate_plan_evidence_refs(
+        validate_plan_contract(
             plan,
             [make_evidence(1)],
         )
@@ -159,7 +163,7 @@ def test_duplicate_evidence_id_fails_deterministically() -> None:
         ValueError,
         match=("Task 5 has duplicate evidence reference: 2"),
     ):
-        validate_plan_evidence_refs(
+        validate_plan_contract(
             plan,
             [
                 make_evidence(1),
@@ -181,7 +185,7 @@ def test_non_research_task_with_evidence_refs_fails() -> None:
         ValueError,
         match=("Task 6 does not require research but has evidence_refs: \\[1\\]"),
     ):
-        validate_plan_evidence_refs(
+        validate_plan_contract(
             plan,
             [make_evidence(1)],
         )
@@ -195,7 +199,7 @@ def test_non_research_task_with_empty_refs_passes() -> None:
         )
     )
 
-    validate_plan_evidence_refs(
+    validate_plan_contract(
         plan,
         [make_evidence(1)],
     )
@@ -215,7 +219,7 @@ def test_overlapping_evidence_refs_are_valid_across_tasks() -> None:
         ),
     )
 
-    validate_plan_evidence_refs(
+    validate_plan_contract(
         plan,
         [
             make_evidence(1),
@@ -499,7 +503,12 @@ def test_orchestrator_sends_quality_metadata_to_planner(monkeypatch):
                 reader_promise="Test promise",
                 audience="Developers",
                 tone="Technical",
-                tasks=[],
+                tasks=[
+                    make_task(
+                        task_id=1,
+                        requires_research=False,
+                    )
+                ],
             )
 
     monkeypatch.setattr(
@@ -535,3 +544,278 @@ def test_orchestrator_sends_quality_metadata_to_planner(monkeypatch):
     assert "official_documentation" in planner_input
     assert "1.0" in planner_input
     assert "0.95" in planner_input
+
+
+def test_empty_task_list_fails_deterministically() -> None:
+    plan = make_plan()
+
+    with pytest.raises(
+        ValueError,
+        match=("Plan must contain at least one task."),
+    ):
+        validate_plan_contract(
+            plan,
+            [],
+        )
+
+
+def test_duplicate_task_id_fails_deterministically() -> None:
+    plan = make_plan(
+        make_task(task_id=1),
+        make_task(task_id=1),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=("Plan contains duplicate task ID: 1"),
+    ):
+        validate_plan_contract(
+            plan,
+            [],
+        )
+
+
+def test_duplicate_task_title_fails_after_normalization() -> None:
+    plan = make_plan(
+        make_task(task_id=1, title="Overview"),
+        make_task(task_id=2, title="  overview "),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=("Plan contains duplicate task title: 'overview'"),
+    ):
+        validate_plan_contract(
+            plan,
+            [],
+        )
+
+
+def test_distinct_task_titles_pass_validation() -> None:
+    plan = make_plan(
+        make_task(task_id=1, title="Overview"),
+        make_task(task_id=2, title="Overview of the ecosystem"),
+    )
+
+    validate_plan_contract(
+        plan,
+        [],
+    )
+
+
+def test_reserved_sources_task_title_fails_deterministically() -> None:
+    for reserved in (
+        "Sources",
+        "sources",
+        "  Sources  ",
+    ):
+        plan = make_plan(
+            make_task(task_id=1, title=reserved),
+        )
+
+        with pytest.raises(
+            ValueError,
+            match=("reserved for the application-owned Sources section"),
+        ):
+            validate_plan_contract(
+                plan,
+                [],
+            )
+
+
+def test_citations_imply_research() -> None:
+    plan = make_plan(
+        make_task(
+            task_id=1,
+            requires_citations=True,
+            requires_research=False,
+            evidence_refs=[1],
+        )
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=("Task 1 requires citations but not research."),
+    ):
+        validate_plan_contract(
+            plan,
+            [make_evidence(1)],
+        )
+
+
+def test_research_task_with_empty_evidence_refs_fails_deterministically() -> None:
+    plan = make_plan(
+        make_task(
+            task_id=1,
+            requires_research=True,
+            evidence_refs=[],
+        )
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=("Task 1 requires research but has no evidence references."),
+    ):
+        validate_plan_contract(
+            plan,
+            [make_evidence(1)],
+        )
+
+
+def test_fanout_rejects_empty_plan() -> None:
+    with pytest.raises(
+        ValueError,
+        match=("Plan must contain at least one task."),
+    ):
+        fanout(
+            make_state(
+                plan=make_plan(),
+                evidence=[],
+            )
+        )
+
+
+class _RecordingPlanner:
+    def __init__(self) -> None:
+        self.invoked = False
+
+    def invoke(self, *args, **kwargs):
+        self.invoked = True
+        raise AssertionError("Planner must not be invoked without evidence.")
+
+
+def _monkeypatch_planner(
+    monkeypatch,
+    planner,
+) -> None:
+    monkeypatch.setattr(
+        "nodes.orchestrator.gemini_llm",
+        type(
+            "FakeLLM",
+            (),
+            {"with_structured_output": lambda self, _: planner},
+        )(),
+    )
+
+
+def test_orchestrator_refuses_research_run_with_no_evidence(monkeypatch) -> None:
+    planner = _RecordingPlanner()
+
+    _monkeypatch_planner(
+        monkeypatch,
+        planner,
+    )
+
+    state: State = {
+        "topic": "AI agents",
+        "mode": "hybrid",
+        "needs_research": True,
+        "research_brief": "",
+        "evidence": [],
+    }
+
+    with pytest.raises(
+        EvidenceInsufficiencyError,
+        match=("zero evidence items were accepted"),
+    ):
+        orchestrator_node(state)
+
+    assert planner.invoked is False
+
+
+def test_orchestrator_plans_closed_book_without_evidence(monkeypatch) -> None:
+    class FakePlanner:
+        def invoke(self, messages):
+            from schemas.models import Plan
+
+            return Plan(
+                blog_title="Test",
+                thesis="Test thesis",
+                opening_angle="Test opening",
+                reader_promise="Test promise",
+                audience="Developers",
+                tone="Technical",
+                tasks=[
+                    make_task(
+                        task_id=1,
+                        requires_research=False,
+                    )
+                ],
+            )
+
+    _monkeypatch_planner(
+        monkeypatch,
+        FakePlanner(),
+    )
+
+    state: State = {
+        "topic": "AI agents",
+        "mode": "closed_book",
+        "needs_research": False,
+        "research_brief": "",
+        "evidence": [],
+    }
+
+    result = orchestrator_node(state)
+
+    assert result["plan"] is not None
+
+
+def test_orchestrator_rejects_empty_research_ownership_from_planner(monkeypatch) -> None:
+    class FakePlanner:
+        def invoke(self, messages):
+            return make_plan(
+                make_task(
+                    task_id=1,
+                    requires_research=True,
+                    evidence_refs=[],
+                )
+            )
+
+    _monkeypatch_planner(
+        monkeypatch,
+        FakePlanner(),
+    )
+
+    state: State = {
+        "topic": "AI agents",
+        "mode": "open_book",
+        "needs_research": True,
+        "research_brief": "",
+        "evidence": [make_evidence(1)],
+    }
+
+    with pytest.raises(
+        ValueError,
+        match=("Task 1 requires research but has no evidence references."),
+    ):
+        orchestrator_node(state)
+
+
+def test_orchestrator_rejects_contract_violating_plan_from_planner(monkeypatch) -> None:
+    class FakePlanner:
+        def invoke(self, messages):
+            return make_plan(
+                make_task(task_id=1, title="Overview"),
+                make_task(task_id=2, title="Overview"),
+            )
+
+    _monkeypatch_planner(
+        monkeypatch,
+        FakePlanner(),
+    )
+
+    state: State = {
+        "topic": "AI agents",
+        "mode": "open_book",
+        "needs_research": True,
+        "research_brief": "",
+        "evidence": [make_evidence(1)],
+    }
+
+    with pytest.raises(
+        ValueError,
+        match=("duplicate task title: 'overview'"),
+    ):
+        orchestrator_node(state)
+
