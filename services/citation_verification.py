@@ -11,6 +11,7 @@ from schemas.models import (
     ResearchEvidence,
     Task,
 )
+from services.markdown_parser import get_headings
 
 # These parameters are commonly used for analytics/tracking and do not identify a different underlying resource.
 TRACKING_PARAMETER_PREFIXES = ("utm_",)
@@ -229,13 +230,77 @@ def verify_citations(
     evidence: list[ResearchEvidence],
 ) -> list[EditorialIssue]:
     """
-    Verify article citations against task-scoped research evidence.
+    Verify article citations against task-scoped research evidence and
+    the application-owned final ## Sources section.
 
     Returns editorial issues rather than raising for unsupported or missing
     citations so the existing editorial revision flow can attempt correction.
     """
 
     evidence_by_id = {item.id: item for item in evidence}
+    global_allowed_urls = {
+        normalize_url(item.url): item for item in evidence
+    }
+
+    headings = get_headings(markdown)
+    h2_headings = [h.text.strip() for h in headings if h.level == 2]
+
+    issues: list[EditorialIssue] = []
+
+    research_used = any(bool(task.evidence_refs) for task in tasks)
+    sources_count = sum(1 for title in h2_headings if title == "Sources")
+
+    if research_used:
+        if sources_count == 0:
+            issues.append(
+                EditorialIssue(
+                    task_id=None,
+                    category="citation",
+                    severity="high",
+                    problem=(
+                        "Article uses research evidence but is missing "
+                        "a final ## Sources section."
+                    ),
+                    correction=(
+                        "Append a ## Sources section containing links to "
+                        "all referenced research evidence."
+                    ),
+                )
+            )
+        elif sources_count > 1:
+            issues.append(
+                EditorialIssue(
+                    task_id=None,
+                    category="citation",
+                    severity="high",
+                    problem=f"Expected exactly one ## Sources section, but found {sources_count}.",
+                    correction="Ensure there is only one ## Sources section at the end of the article.",
+                )
+            )
+        elif h2_headings and h2_headings[-1] != "Sources":
+            issues.append(
+                EditorialIssue(
+                    task_id=None,
+                    category="citation",
+                    severity="high",
+                    problem="The ## Sources section must be the final H2 section of the article.",
+                    correction="Move the ## Sources section to the end of the article.",
+                )
+            )
+    else:
+        if sources_count > 0:
+            issues.append(
+                EditorialIssue(
+                    task_id=None,
+                    category="citation",
+                    severity="high",
+                    problem=(
+                        "A ## Sources section is not allowed in a closed-book "
+                        "article with no research evidence."
+                    ),
+                    correction="Remove the ## Sources section from closed-book articles.",
+                )
+            )
 
     links_by_section: dict[
         str,
@@ -247,24 +312,37 @@ def verify_citations(
             continue
 
         links_by_section.setdefault(
-            link.section_title,
+            link.section_title.strip(),
             [],
         ).append(link.url)
 
-    issues: list[EditorialIssue] = []
+    if "Sources" in links_by_section:
+        for url in links_by_section["Sources"]:
+            norm_url = normalize_url(url)
+            if norm_url not in global_allowed_urls:
+                issues.append(
+                    EditorialIssue(
+                        task_id=None,
+                        category="citation",
+                        severity="high",
+                        problem=(
+                            "The Sources section contains a URL not backed "
+                            f"by research evidence: {url}"
+                        ),
+                        correction=(
+                            "Remove or replace this URL in the Sources section "
+                            "with an evidence-backed URL."
+                        ),
+                    )
+                )
 
     for task in tasks:
         section_links = links_by_section.get(
-            task.title,
+            task.title.strip(),
             [],
         )
 
         allowed_urls = _task_evidence_urls(
-            task,
-            evidence_by_id,
-        )
-
-        task_evidence_by_url = _task_evidence_by_url(
             task,
             evidence_by_id,
         )

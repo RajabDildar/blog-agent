@@ -1,4 +1,5 @@
 from schemas.state import State
+from services.article_structure import get_expected_sections
 from services.final_validation import (
     validate_final_images,
 )
@@ -18,7 +19,7 @@ def validator_node(
     if plan is None:
         raise ValueError("Final validator: plan is missing.")
 
-    expected_sections = [task.title for task in plan.tasks]
+    expected_sections = get_expected_sections(plan)
 
     # No LLM repair here.
     gate = run_markdown_quality_gate(

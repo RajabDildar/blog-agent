@@ -1,4 +1,5 @@
 from schemas.state import State
+from services.article_structure import get_expected_sections
 from services.markdown_quality import (
     run_markdown_quality_gate,
 )
@@ -15,7 +16,7 @@ def article_validator_node(
     if plan is None:
         raise ValueError("Article validator: plan is missing.")
 
-    expected_sections = [task.title for task in plan.tasks]
+    expected_sections = get_expected_sections(plan)
 
     diagnostics = get_current_diagnostics()
 

@@ -191,3 +191,59 @@ def test_detects_internal_generation_marker():
     )
 
     assert "Unresolved image placeholder." in errors
+
+
+def test_get_expected_sections_appends_sources_for_research_plan():
+    from schemas.models import Plan, Task
+    from services.article_structure import get_expected_sections, plan_requires_sources
+
+    plan = Plan(
+        blog_title="Test Blog",
+        thesis="Thesis",
+        opening_angle="Angle",
+        reader_promise="Promise",
+        audience="Audience",
+        tone="Tone",
+        tasks=[
+            Task(
+                id=1,
+                title="First",
+                goal="Goal",
+                bullets=["a", "b", "c"],
+                target_words=200,
+                requires_research=True,
+                evidence_refs=[1],
+            )
+        ],
+    )
+
+    assert plan_requires_sources(plan) is True
+    assert get_expected_sections(plan) == ["First", "Sources"]
+
+
+def test_get_expected_sections_omits_sources_for_closed_book_plan():
+    from schemas.models import Plan, Task
+    from services.article_structure import get_expected_sections, plan_requires_sources
+
+    plan = Plan(
+        blog_title="Test Blog",
+        thesis="Thesis",
+        opening_angle="Angle",
+        reader_promise="Promise",
+        audience="Audience",
+        tone="Tone",
+        tasks=[
+            Task(
+                id=1,
+                title="First",
+                goal="Goal",
+                bullets=["a", "b", "c"],
+                target_words=200,
+                requires_research=False,
+                evidence_refs=[],
+            )
+        ],
+    )
+
+    assert plan_requires_sources(plan) is False
+    assert get_expected_sections(plan) == ["First"]
