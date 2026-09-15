@@ -48,6 +48,5 @@ revision_llm = InstrumentedRunnable(ChatGroq(
 
 gemini_llm = InstrumentedRunnable(ChatGoogleGenerativeAI(
     model=GEMINI_MODEL,
-    temperature=0.2,
     max_retries=0,
 ), "gemini")

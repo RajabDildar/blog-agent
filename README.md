@@ -12,10 +12,13 @@ Graph execution is checkpointed, so a run that fails partway through — a provi
 - Uses Tavily for web research when required.
 - Creates a structured article plan with ordered sections.
 - Generates section bodies in parallel with LangGraph `Send`.
-- Reviews the assembled article and revises selected sections.
+- Appends an application-owned `## Sources` section for research-backed articles.
+- Validates Markdown structure and repairs formatting deterministically or with LLM assistance.
+- Verifies inline citations and final Sources deterministically.
+- Reviews the assembled article with a holistic editor and revises selected sections.
+- Enforces a deterministic citation release gate that blocks publication on unresolved high-severity citation defects.
 - Enforces deterministic H1/H2 ownership in Python.
 - Parses Markdown with `markdown-it-py` instead of relying on regex for document structure.
-- Repairs Markdown deterministically first, then with an LLM when needed.
 - Formats Markdown with `mdformat` and validates it again afterward.
 - Plans up to three article-specific images.
 - Generates images with Cloudflare Workers AI and inserts them into the planned sections.
@@ -43,18 +46,7 @@ Router
     Parallel Workers
            |
            v
-         Merge
-           |
-           v
-        Editor
-           |
-      +----+----+
-      |         |
-   Approved   Revise
-      |         |
-      |      Revision
-      |         |
-      +----<----+
+     Merge + Sources
            |
            v
    Article Validation
@@ -68,23 +60,49 @@ Router
        +---<---+
            |
            v
-      Image Planner
+   Citation Verifier
            |
            v
-     Image Generator
+        Editor (Pass 1)
+           |
+      +----+----+
+      |         |
+   Approved   Revise
+      |         |
+      |      Revision
+      |         |
+      |    Merge + Sources
+      |         |
+      |  Article Validation
+      |         |
+      |  Citation Verifier (Pass 2)
+      |         |
+      +----+----+
            |
            v
-    Final Validation
-           |
+ Citation Release Gate
        +---+---+
        |       |
-     Valid   Invalid
+     Pass    Fail
        |       |
        v       v
-      Save    Stop
+ Image Planner Stop
        |
        v
-      END
+ Image Generator
+       |
+       v
+ Final Validation
+       |
+   +---+---+
+   |       |
+ Valid   Invalid
+   |       |
+   v       v
+  Save    Stop
+   |
+   v
+  END
 ```
  
 Two validation boundaries are intentional.
@@ -115,9 +133,12 @@ blog-agent/
 │   ├── state.py
 │   └── context.py
 ├── services/
+│   ├── article_structure.py
 │   ├── checkpointer.py
+│   ├── citation_verification.py
 │   ├── cloudflare.py
 │   ├── final_validation.py
+│   ├── groq_admission.py
 │   ├── image_prompt.py
 │   ├── llm.py
 │   ├── markdown.py
@@ -127,9 +148,11 @@ blog-agent/
 │   ├── markdown_quality.py
 │   ├── markdown_repair.py
 │   ├── markdown_validation.py
+│   ├── rate_limits.py
 │   ├── run_diagnostics.py
 │   ├── run_paths.py
 │   ├── section_validation.py
+│   ├── source_quality.py
 │   ├── storage.py
 │   └── tavily.py
 ├── tests/
@@ -156,7 +179,6 @@ blog-agent/
 | Markdown parsing | markdown-it-py |
 | Markdown formatting | mdformat + GFM |
 | Graph persistence | LangGraph checkpointing (`langgraph-checkpoint-sqlite`) |
-| Tracing | LangSmith |
 | Package management | uv |
 | Testing | pytest |
  

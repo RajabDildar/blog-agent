@@ -59,3 +59,21 @@ uv run python -m eval.run_eval \
 ```
 
 Each experiment writes an immutable `manifest.json`, `results.json`, `report.md`, copied final articles, and diagnostics. Existing successful, fully scored topics are skipped; use `--rerun-failed` to retry incomplete or failed topics. The judge receives generated image bytes as Gemini multimodal inputs, so scores from pre-Step-0 text-only judging are not directly comparable.
+
+## Candidate evaluation and comparison report
+
+Run a candidate experiment:
+
+```bash
+uv run python -m eval.run_eval \
+  --experiment-name phase8-remediation-candidate \
+  --purpose "Final remediation candidate evaluation"
+```
+
+Compare a candidate experiment against baseline to generate a comparison report with guardrail checks:
+
+```bash
+uv run python -m eval.report \
+  --baseline eval/runs/phase8-remediation-baseline \
+  --candidate eval/runs/phase8-remediation-candidate
+```

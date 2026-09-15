@@ -16,7 +16,6 @@ from schemas.models import Plan
 
 judge_llm = ChatGoogleGenerativeAI(
     model=EVAL_JUDGE_MODEL,
-    temperature=0,
     max_retries=0,
 )
 
