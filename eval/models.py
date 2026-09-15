@@ -96,6 +96,11 @@ class EvaluationMetrics(BaseModel):
         ge=0,
     )
 
+    # Number of holistic editorial review passes (distinct from revision_count,
+    # which counts actual task-scoped revision runs).  Used to compute
+    # revision_rate = revision_count / editorial_reviews when reviews > 0.
+    editorial_reviews: int = Field(default=0, ge=0)
+
     generation_time_seconds: float = Field(
         ...,
         ge=0,

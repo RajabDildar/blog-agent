@@ -575,3 +575,58 @@ def test_rate_limit_pause_persists_resume_after_and_resume_clears_it(
     assert restored.resume_after is None
     assert restored.started_at == started_at
     assert restored.events[-1]["event"] == "run_resumed"
+
+
+def test_record_provider_call_counts_actual_invocations_separately_from_node_attempts(
+    tmp_path,
+    monkeypatch,
+):
+    """
+    record_provider_call() tracks actual outbound provider invocations at call
+    boundaries; it is a distinct counter from provider_attempts (node-level
+    infrastructure retries).  Multiple explicit calls accumulate independently.
+    """
+    monkeypatch.chdir(tmp_path)
+
+    diagnostics = RunDiagnostics(
+        run_id="provider-calls-test",
+        topic="Provider call counting",
+    )
+
+    # Simulate node infrastructure: two node attempts (one retry) for gemini.
+    diagnostics.node_started(node="research", provider="gemini", attempt=1)
+    diagnostics.node_started(node="research", provider="gemini", attempt=2)
+
+    # Actual provider calls within those nodes: e.g., 3 separate LLM invocations.
+    diagnostics.record_provider_call("gemini")
+    diagnostics.record_provider_call("gemini")
+    diagnostics.record_provider_call("gemini")
+
+    # One Tavily search and two image calls.
+    diagnostics.record_provider_call("tavily")
+    diagnostics.record_provider_call("cloudflare_image")
+    diagnostics.record_provider_call("cloudflare_image")
+
+    diagnostics.finish_success({})
+
+    data = json.loads(
+        Path("runs", "provider-calls-test", "diagnostics.json").read_text(encoding="utf-8")
+    )
+
+    # provider_calls tracks actual invocations.
+    assert data["provider_calls"]["gemini"] == 3
+    assert data["provider_calls"]["tavily"] == 1
+    assert data["provider_calls"]["cloudflare_image"] == 2
+
+    # provider_attempts tracks node-level infrastructure retries (separate).
+    assert data["provider_attempts"]["gemini"] == 2
+
+    # The two counters are independent: attempts != calls.
+    assert data["provider_calls"]["gemini"] != data["provider_attempts"]["gemini"]
+
+    # Events include individual provider_call events.
+    call_events = [e for e in data["events"] if e["event"] == "provider_call"]
+    assert len(call_events) == 6  # 3 gemini + 1 tavily + 2 cloudflare_image
+
+    gemini_call_events = [e for e in call_events if e["provider"] == "gemini"]
+    assert len(gemini_call_events) == 3

@@ -11,8 +11,10 @@ from eval.models import (
     EvaluationScores,
 )
 from eval.report import (
+    build_comparison_report,
     build_report,
     calculate_average_scores,
+    check_acceptance_guardrails,
 )
 from eval.run_eval import (
     _wait_for_resume,
@@ -41,6 +43,7 @@ def test_extract_metrics_from_diagnostics():
         },
         "image_attempts": 3,
         "editorial_revisions": 1,
+        "editorial_reviews": 1,
         "duration_seconds": 42.5,
         "retry_count": 2,
     }
@@ -52,6 +55,7 @@ def test_extract_metrics_from_diagnostics():
         "research_calls": 2,
         "image_calls": 3,
         "revision_count": 1,
+        "editorial_reviews": 1,
         "generation_time_seconds": 42.5,
         "retries": 2,
         "node_attempts": 9,
@@ -555,3 +559,397 @@ def test_extract_metrics_includes_evidence_metrics_when_provided():
     assert metrics["average_quality_score"] == 0.9
     assert metrics["weak_source_ratio"] == 0.0
     assert metrics["unique_domain_count"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Step 5 — New tests
+# ---------------------------------------------------------------------------
+
+
+def make_run_with_metrics(
+    *,
+    topic: str,
+    overall_quality: int,
+    llm_calls: int = 5,
+    revision_count: int = 0,
+    editorial_reviews: int = 1,
+    citation_issues: dict | None = None,
+) -> EvaluationRun:
+    return EvaluationRun(
+        topic=topic,
+        run_id=f"run-{topic[:4]}",
+        status="success",
+        evaluation=EvaluationResult(
+            scores=EvaluationScores(
+                overall_quality=overall_quality,
+                structure=9,
+                technical_accuracy=9,
+                research_quality=9,
+                coherence=9,
+                usefulness=9,
+                writing_quality=9,
+                citations=9,
+                images=8,
+            ),
+            strengths=[],
+            weaknesses=[],
+            summary="Good.",
+        ),
+        metrics=EvaluationMetrics(
+            llm_calls=llm_calls,
+            research_calls=1,
+            image_calls=2,
+            revision_count=revision_count,
+            editorial_reviews=editorial_reviews,
+            generation_time_seconds=10.0,
+            retries=0,
+            citation_issue_counts=citation_issues or {},
+        ),
+    )
+
+
+def test_extract_metrics_actual_calls_vs_node_attempts():
+    """
+    Verify that extract_metrics reads actual call counts from provider_calls
+    (outbound invocations at call boundaries) and node attempt counts from
+    provider_attempts (infrastructure-level retries) as two separate values.
+    """
+    diagnostics = {
+        # Actual provider invocations recorded by InstrumentedRunnable/tavily_search.
+        "provider_calls": {
+            "gemini": 5,
+            "groq": 2,
+            "tavily": 1,
+            "cloudflare_image": 3,
+        },
+        # Node-level attempt counts: can differ from call counts due to retries.
+        "provider_attempts": {
+            "gemini": 3,  # 3 node attempts but 5 actual calls across those attempts
+            "groq": 2,
+        },
+        "editorial_revisions": 1,
+        "editorial_reviews": 1,
+        "duration_seconds": 20.0,
+        "retry_count": 1,
+    }
+
+    metrics = extract_metrics(diagnostics)
+
+    # LLM calls = actual gemini + groq provider_calls (not node_attempts).
+    assert metrics["llm_calls"] == 7  # 5 gemini + 2 groq
+    assert metrics["research_calls"] == 1
+    assert metrics["image_calls"] == 3
+    # node_attempts is the infrastructure sum (separate from call counts).
+    assert metrics["node_attempts"] == 5  # sum of provider_attempts values
+    assert metrics["retries"] == 1
+    # Confirm they diverge as expected.
+    assert metrics["llm_calls"] != metrics["node_attempts"]
+
+
+def test_build_report_includes_revision_rate_and_judge_calls():
+    """
+    build_report must show editorial_reviews, revision_count, and
+    a computed revision rate for each run.
+    """
+    run = make_run_with_metrics(
+        topic="Revision rate topic",
+        overall_quality=9,
+        revision_count=1,
+        editorial_reviews=1,
+    )
+    run = run.model_copy(update={"metrics": run.metrics.model_copy(update={"judge_calls": 1})})
+    report = build_report([run])
+
+    assert "Editorial reviews: 1" in report
+    assert "Revision count: 1" in report
+    assert "Judge calls: 1" in report
+    # Revision rate should appear (1/1 = 1.00)
+    assert "Revision rate: 1.00" in report
+
+
+def test_build_report_revision_rate_no_reviews():
+    """When editorial_reviews is 0, revision rate should show as n/a."""
+    run = make_run_with_metrics(
+        topic="No review topic",
+        overall_quality=9,
+        revision_count=0,
+        editorial_reviews=0,
+    )
+    report = build_report([run])
+    assert "n/a" in report
+
+
+def test_build_comparison_report_includes_operational_deltas():
+    """
+    build_comparison_report must include an operational deltas table covering
+    LLM calls, revisions, retries, and generation time alongside score deltas.
+    """
+    baseline = [
+        make_run_with_metrics(topic="AI", overall_quality=9, llm_calls=10, revision_count=0)
+    ]
+    candidate = [
+        make_run_with_metrics(topic="AI", overall_quality=8, llm_calls=12, revision_count=1)
+    ]
+    report = build_comparison_report(baseline_runs=baseline, candidate_runs=candidate)
+
+    assert "Score deltas" in report
+    assert "Operational metric deltas" in report
+    # Score regression visible.
+    assert "overall_quality" in report
+    # Operational regression visible.
+    assert "Average LLM calls" in report
+    assert "Average revisions" in report
+
+
+def test_build_comparison_report_per_topic_all_score_dimensions():
+    """
+    Per-topic regressions section must cover all judge score dimensions,
+    not just overall_quality.
+    """
+    baseline_scores = EvaluationScores(
+        overall_quality=9,
+        structure=10,
+        technical_accuracy=9,
+        research_quality=9,
+        coherence=10,
+        usefulness=9,
+        writing_quality=9,
+        citations=9,
+        images=8,
+    )
+    candidate_scores = EvaluationScores(
+        overall_quality=9,  # no overall regression
+        structure=10,
+        technical_accuracy=9,
+        research_quality=9,
+        coherence=10,
+        usefulness=9,
+        writing_quality=9,
+        citations=7,  # citation regression
+        images=8,
+    )
+    baseline_run = EvaluationRun(
+        topic="Citations topic",
+        run_id="b-run",
+        status="success",
+        evaluation=EvaluationResult(scores=baseline_scores, strengths=[], weaknesses=[], summary="ok"),
+        metrics=EvaluationMetrics(
+            llm_calls=5, research_calls=1, image_calls=2,
+            revision_count=0, generation_time_seconds=10.0, retries=0,
+        ),
+    )
+    candidate_run = EvaluationRun(
+        topic="Citations topic",
+        run_id="c-run",
+        status="success",
+        evaluation=EvaluationResult(scores=candidate_scores, strengths=[], weaknesses=[], summary="ok"),
+        metrics=EvaluationMetrics(
+            llm_calls=5, research_calls=1, image_calls=2,
+            revision_count=0, generation_time_seconds=10.0, retries=0,
+        ),
+    )
+    report = build_comparison_report(baseline_runs=[baseline_run], candidate_runs=[candidate_run])
+
+    assert "Per-topic regressions" in report
+    # The citation regression should appear (9 -> 7) even though overall_quality didn't drop.
+    assert "citations" in report
+    assert "Citations topic" in report
+
+
+def test_build_comparison_report_citation_issue_deltas():
+    """build_comparison_report must show citation issue count deltas when present."""
+    baseline = [
+        make_run_with_metrics(
+            topic="Sources",
+            overall_quality=9,
+            citation_issues={"high:missing_citation": 2},
+        )
+    ]
+    candidate = [
+        make_run_with_metrics(
+            topic="Sources",
+            overall_quality=9,
+            citation_issues={"high:missing_citation": 0},
+        )
+    ]
+    report = build_comparison_report(baseline_runs=baseline, candidate_runs=candidate)
+
+    assert "Citation issue deltas" in report
+    assert "high:missing_citation" in report
+
+
+def test_check_acceptance_guardrails_passes_on_good_run():
+    """All guardrails should pass for a high-quality, low-cost run."""
+    runs = [
+        make_run_with_metrics(
+            topic="T1", overall_quality=9, llm_calls=10, revision_count=0
+        ),
+        make_run_with_metrics(
+            topic="T2", overall_quality=9, llm_calls=11, revision_count=0
+        ),
+    ]
+    # Override scores to pass all guardrails.
+    for run in runs:
+        run.evaluation.scores.overall_quality = 9
+        run.evaluation.scores.citations = 9
+        run.evaluation.scores.research_quality = 9
+
+    failures = check_acceptance_guardrails(runs)
+    assert failures == [], f"Expected no failures, got: {failures}"
+
+
+def test_check_acceptance_guardrails_fails_on_low_overall_quality():
+    """Guardrail fails when overall quality average drops below 9.00."""
+    runs = [
+        make_run_with_metrics(topic="T1", overall_quality=8, llm_calls=10)
+    ]
+    # Force citations and research_quality to pass; only overall_quality is low.
+    runs[0].evaluation.scores.citations = 9
+    runs[0].evaluation.scores.research_quality = 9
+
+    failures = check_acceptance_guardrails(runs)
+    assert any("Overall quality" in f for f in failures), failures
+
+
+def test_check_acceptance_guardrails_fails_on_high_severity_citation_issues():
+    """Guardrail fails when any run has unresolved high-severity citation issues."""
+    runs = [
+        make_run_with_metrics(
+            topic="Problematic",
+            overall_quality=9,
+            citation_issues={"high:missing_citation": 3},
+        )
+    ]
+    runs[0].evaluation.scores.citations = 9
+    runs[0].evaluation.scores.research_quality = 9
+
+    failures = check_acceptance_guardrails(runs)
+    assert any("high-severity citation" in f.lower() for f in failures), failures
+
+
+def test_check_acceptance_guardrails_fails_on_excess_llm_calls():
+    """Guardrail fails when average LLM calls exceed the rejected candidate's 12.63."""
+    runs = [
+        make_run_with_metrics(topic="T1", overall_quality=9, llm_calls=15)
+    ]
+    runs[0].evaluation.scores.citations = 9
+    runs[0].evaluation.scores.research_quality = 9
+
+    failures = check_acceptance_guardrails(runs)
+    assert any("LLM calls" in f for f in failures), failures
+
+
+def test_rerun_failed_skips_failed_topics_by_default(monkeypatch, tmp_path):
+    """
+    By default (rerun_failed=False), previously failed topics are skipped
+    to prevent redundant reruns in the same session.
+    """
+    failed_run = EvaluationRun(
+        topic="previously-failed",
+        run_id="run-old",
+        status="failed",
+        metrics=EvaluationMetrics(
+            llm_calls=0,
+            research_calls=0,
+            image_calls=0,
+            revision_count=0,
+            generation_time_seconds=0,
+            retries=0,
+        ),
+        failure="RuntimeError: something went wrong",
+    )
+
+    from eval.report import write_report
+
+    write_report(runs=[failed_run], output_dir=tmp_path)
+
+    generated_topics = []
+
+    def fake_run(topic, *, run_id):
+        generated_topics.append(topic)
+        return {"plan": object(), "final": "Article", "saved_path": "a.md"}
+
+    monkeypatch.setattr("eval.run_eval.generate_run_id", lambda: "new-id")
+    monkeypatch.setattr("eval.run_eval.run", fake_run)
+    monkeypatch.setattr(
+        "eval.run_eval.load_diagnostics",
+        lambda run_id: {
+            "provider_attempts": {},
+            "editorial_revisions": 0,
+            "editorial_reviews": 0,
+            "duration_seconds": 0,
+            "retry_count": 0,
+        },
+    )
+    monkeypatch.setattr(
+        "eval.run_eval.evaluate_article",
+        lambda **kwargs: make_run(topic=kwargs["topic"], overall_quality=8).evaluation,
+    )
+
+    run_evaluation(
+        topics=["previously-failed", "new-topic"],
+        output_dir=tmp_path,
+        between_run_delay_seconds=0,
+        rerun_failed=False,
+    )
+
+    # With rerun_failed=False, previously-failed topic must be skipped.
+    assert "previously-failed" not in generated_topics
+    assert "new-topic" in generated_topics
+
+
+def test_rerun_failed_retries_failed_topics_when_requested(monkeypatch, tmp_path):
+    """
+    When rerun_failed=True, previously failed topics are included in the run set.
+    """
+    failed_run = EvaluationRun(
+        topic="retry-me",
+        run_id="run-old",
+        status="failed",
+        metrics=EvaluationMetrics(
+            llm_calls=0,
+            research_calls=0,
+            image_calls=0,
+            revision_count=0,
+            generation_time_seconds=0,
+            retries=0,
+        ),
+        failure="RuntimeError: first attempt failed",
+    )
+
+    from eval.report import write_report
+
+    write_report(runs=[failed_run], output_dir=tmp_path)
+
+    generated_topics = []
+
+    def fake_run(topic, *, run_id):
+        generated_topics.append(topic)
+        return {"plan": object(), "final": "Article", "saved_path": "a.md"}
+
+    monkeypatch.setattr("eval.run_eval.generate_run_id", lambda: "new-id")
+    monkeypatch.setattr("eval.run_eval.run", fake_run)
+    monkeypatch.setattr(
+        "eval.run_eval.load_diagnostics",
+        lambda run_id: {
+            "provider_attempts": {},
+            "editorial_revisions": 0,
+            "editorial_reviews": 0,
+            "duration_seconds": 0,
+            "retry_count": 0,
+        },
+    )
+    monkeypatch.setattr(
+        "eval.run_eval.evaluate_article",
+        lambda **kwargs: make_run(topic=kwargs["topic"], overall_quality=8).evaluation,
+    )
+
+    run_evaluation(
+        topics=["retry-me"],
+        output_dir=tmp_path,
+        between_run_delay_seconds=0,
+        rerun_failed=True,
+    )
+
+    # With rerun_failed=True, previously-failed topic must be retried.
+    assert "retry-me" in generated_topics

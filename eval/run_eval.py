@@ -154,6 +154,8 @@ def _build_success_run(
         evaluation = evaluate_article(topic=topic, plan=result["plan"], article=result["final"], image_paths=_image_paths(result))
         metrics.judge_calls = 1
     except Exception as exc:
+        # Record that a judge call was attempted even though it failed.
+        metrics.judge_calls = 1
         return EvaluationRun(topic=topic, run_id=run_id, status="failed", article_path=result.get("saved_path"), metrics=metrics, failure=f"JudgeError: {type(exc).__name__}: {exc}", rate_limit_recoveries=rate_limit_recoveries, rate_limit_wait_seconds=rate_limit_wait_seconds, article_artifact=article_artifact, diagnostics_artifact=diagnostics_artifact, citation_issues=[issue.model_dump(mode="json") for issue in citation_issues])
 
     return EvaluationRun(
@@ -346,7 +348,24 @@ def run_evaluation(
         output_dir,
     )
 
-    completed_topics = {evaluation_run.topic for evaluation_run in runs if evaluation_run.status == "success" and evaluation_run.evaluation is not None}
+    # Determine which topics still need to run.
+    # A topic is considered complete only if it succeeded AND has a judge evaluation.
+    # rerun_failed=True  -> only skip successfully-evaluated topics; failed ones are retried.
+    # rerun_failed=False -> also skip previously-failed topics to avoid redundant reruns.
+    if rerun_failed:
+        completed_topics = {
+            evaluation_run.topic
+            for evaluation_run in runs
+            if evaluation_run.status == "success" and evaluation_run.evaluation is not None
+        }
+    else:
+        completed_topics = {
+            evaluation_run.topic
+            for evaluation_run in runs
+            if (
+                evaluation_run.status == "success" and evaluation_run.evaluation is not None
+            ) or evaluation_run.status == "failed"
+        }
 
     topics_to_run = [topic for topic in topics if topic not in completed_topics]
 

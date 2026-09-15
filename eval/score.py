@@ -166,12 +166,19 @@ def extract_metrics(
         {},
     )
 
+    # Actual invocation counts come from provider_calls (recorded at the call
+    # boundary inside InstrumentedRunnable / tavily_search / cloudflare).
+    # Node attempts/retries are a separate infrastructure counter.
     metrics = {
         "llm_calls": provider_calls.get("groq", 0) + provider_calls.get("gemini", 0),
         "research_calls": provider_calls.get("tavily", 0),
         "image_calls": provider_calls.get("cloudflare_image", 0),
         "revision_count": diagnostics.get(
             "editorial_revisions",
+            0,
+        ),
+        "editorial_reviews": diagnostics.get(
+            "editorial_reviews",
             0,
         ),
         "generation_time_seconds": diagnostics.get(
@@ -182,6 +189,8 @@ def extract_metrics(
             "retry_count",
             0,
         ),
+        # node_attempts is the raw infrastructure counter (attempts including
+        # retried invocations); kept separate from actual provider call counts.
         "node_attempts": sum(provider_attempts.values()),
     }
 
