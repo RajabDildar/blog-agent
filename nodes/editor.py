@@ -67,6 +67,9 @@ def build_editor_evidence_sheet(
             "authority_score": item.authority_score,
             "support_strength": item.support_strength,
             "confidence_score": item.confidence_score,
+            "published_at": item.published_at,
+            "freshness_status": item.freshness_status,
+            "freshness_warning": item.freshness_warning,
         }
         for item in evidence
     ]
@@ -141,7 +144,7 @@ def editor_node(
     )
 
     deterministic_task_ids = {
-        issue.task_id for issue in citation_issues if issue.task_id is not None
+        issue.task_id for issue in citation_issues if issue.task_id is not None and issue.task_id in planned_ids
     }
 
     review.sections_to_revise = sorted(
@@ -156,6 +159,23 @@ def editor_node(
     )
 
     review.approved = approved
+
+    if not review.approved:
+        actionable_task_ids = {
+            issue.task_id
+            for issue in review.issues
+            if issue.task_id is not None and issue.task_id in planned_ids
+        }
+        valid_revision_task_ids = [
+            task_id
+            for task_id in review.sections_to_revise
+            if task_id in actionable_task_ids
+        ]
+        if not valid_revision_task_ids:
+            raise ValueError(
+                "Editor returned approved=False but provided no valid task-scoped "
+                "actionable issues for revision."
+            )
 
     diagnostics = get_current_diagnostics()
 

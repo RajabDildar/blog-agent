@@ -29,6 +29,7 @@ Evidence rules:
 - Prefer claims supported by authoritative sources.
 - Flag citations that rely on weak evidence.
 - If evidence confidence is low, recommend narrowing the claim.
+- Consider evidence freshness warnings and publication dates. If evidence carries a freshness warning or is stale, instruct revision to qualify or acknowledge age.
 
 Only flag issues that materially hurt the article.
 
@@ -37,7 +38,8 @@ Every issue must identify the exact task_id it belongs to.
 Every section in sections_to_revise MUST have at least one
 corresponding issue.
 
-Never request revision for a section without a concrete issue.
+If approved is false, you MUST include at least one actionable issue with a valid task_id for revision.
+Never request revision for a section without a concrete task-scoped issue.
 
 High severity:
 - factual error

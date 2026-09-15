@@ -159,11 +159,17 @@ def _thread_exists(
     )
 
 
-def route_after_merge(state: State):
-    if state["revision_count"] >= MAX_EDITORIAL_REVISIONS:
-        return "article_validator"
+def route_after_citation_verifier(
+    state: State,
+):
+    if state["revision_count"] < MAX_EDITORIAL_REVISIONS:
+        return "editor"
 
-    return "editor"
+    citation_issues = state.get("citation_issues", [])
+    if any(issue.severity == "high" for issue in citation_issues):
+        return "citation_release_gate_failure"
+
+    return "image_planner"
 
 
 def route_after_editor(
@@ -174,9 +180,8 @@ def route_after_editor(
     if review is None:
         raise ValueError("Editorial review missing.")
 
-    # Approved article goes to structural validation.
     if review.approved:
-        return "article_validator"
+        return "image_planner"
 
     issue_map: dict[int, list[dict]] = {}
 
@@ -189,17 +194,21 @@ def route_after_editor(
             [],
         ).append(issue.model_dump())
 
-    requested_ids = {
-        task_id for task_id in review.sections_to_revise if task_id in issue_map
-    }
-
-    if not requested_ids:
-        return "article_validator"
-
-    sends = []
-
     if state["plan"] is None:
         raise ValueError("Plan missing during revision routing.")
+
+    requested_ids = [
+        task.id
+        for task in state["plan"].tasks
+        if task.id in review.sections_to_revise and task.id in issue_map
+    ]
+
+    if not requested_ids:
+        raise ValueError(
+            "Editor review approved=False but no actionable section issues remain during routing."
+        )
+
+    sends = []
 
     for task_id in requested_ids:
         section = state["sections"].get(task_id)
@@ -258,7 +267,7 @@ def route_after_article_validation(
     state: State,
 ):
     if state["article_validation_passed"]:
-        return "image_planner"
+        return "citation_verifier"
 
     if state["article_repair_count"] < MAX_ARTICLE_REPAIRS:
         return "repair"
@@ -298,6 +307,24 @@ def article_validation_failure_node(
     raise RuntimeError(
         "Article validation failed after repair:\n"
         + "\n".join(f"- {error}" for error in errors)
+    )
+
+
+def citation_release_gate_failure_node(
+    state: State,
+) -> dict:
+    issues = [
+        issue
+        for issue in state.get("citation_issues", [])
+        if issue.severity == "high"
+    ]
+
+    raise RuntimeError(
+        "Article publication blocked by citation release gate after maximum editorial revisions:\n"
+        + "\n".join(
+            f"- Task {issue.task_id if issue.task_id is not None else 'Global'}: {issue.problem}"
+            for issue in issues
+        )
     )
 
 
@@ -438,6 +465,14 @@ def build_graph(
     )
 
     builder.add_node(
+        "citation_release_gate_failure",
+        instrument_node(
+            "citation_release_gate_failure",
+            citation_release_gate_failure_node,
+        ),
+    )
+
+    builder.add_node(
         "image_planner",
         instrument_node(
             "image_planner",
@@ -514,15 +549,26 @@ def build_graph(
 
     builder.add_edge(
         "merge",
-        "citation_verifier",
+        "article_validator",
+    )
+
+    builder.add_conditional_edges(
+        "article_validator",
+        route_after_article_validation,
+        {
+            "citation_verifier": "citation_verifier",
+            "repair": "repair",
+            "article_validation_failure": ("article_validation_failure"),
+        },
     )
 
     builder.add_conditional_edges(
         "citation_verifier",
-        route_after_merge,
+        route_after_citation_verifier,
         {
             "editor": "editor",
-            "article_validator": "article_validator",
+            "image_planner": "image_planner",
+            "citation_release_gate_failure": "citation_release_gate_failure",
         },
     )
 
@@ -541,16 +587,6 @@ def build_graph(
         "merge",
     )
 
-    builder.add_conditional_edges(
-        "article_validator",
-        route_after_article_validation,
-        {
-            "image_planner": "image_planner",
-            "repair": "repair",
-            "article_validation_failure": ("article_validation_failure"),
-        },
-    )
-
     builder.add_edge(
         "repair",
         "article_validator",
@@ -558,6 +594,11 @@ def build_graph(
 
     builder.add_edge(
         "article_validation_failure",
+        END,
+    )
+
+    builder.add_edge(
+        "citation_release_gate_failure",
         END,
     )
 

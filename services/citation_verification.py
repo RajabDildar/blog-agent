@@ -220,6 +220,20 @@ def verify_evidence_quality(
                     )
                 )
 
+            if item.freshness_warning:
+                issues.append(
+                    EditorialIssue(
+                        task_id=task.id,
+                        category="citation",
+                        severity="medium",
+                        problem=f"Evidence freshness warning: {item.freshness_warning}",
+                        correction=(
+                            "Verify claim is still current or soften/qualify "
+                            "the statement to reflect its source date."
+                        ),
+                    )
+                )
+
     return issues
 
 

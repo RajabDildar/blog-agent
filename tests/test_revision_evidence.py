@@ -233,15 +233,65 @@ def test_revision_sends_respect_sections_to_revise() -> None:
 
     sends = route_after_editor(state)
 
-    # Two tasks requested, so two revision Sends. Content is deterministic;
-    # sort by task id because cross-task iteration order is not guaranteed here.
-    payloads_by_task = {
-        send.arg["task"]["id"]: send.arg for send in sends
-    }
+    # Revisions MUST be routed in exact plan.tasks order
+    assert [send.arg["task"]["id"] for send in sends] == [1, 2]
+    assert [item["id"] for item in sends[0].arg["evidence"]] == [1]
+    assert [item["id"] for item in sends[1].arg["evidence"]] == [2]
 
-    assert set(payloads_by_task) == {1, 2}
-    assert [item["id"] for item in payloads_by_task[1]["evidence"]] == [1]
-    assert [item["id"] for item in payloads_by_task[2]["evidence"]] == [2]
+
+def test_revision_sends_preserve_plan_order_even_if_sections_to_revise_out_of_order() -> None:
+    plan = make_plan(
+        make_task(
+            task_id=1,
+            requires_research=True,
+            evidence_refs=[1],
+        ),
+        make_task(
+            task_id=2,
+            requires_research=True,
+            evidence_refs=[2],
+        ),
+    )
+
+    review = EditorialReview(
+        approved=False,
+        overall_score=5,
+        issues=[
+            EditorialIssue(
+                task_id=1,
+                category="citation",
+                severity="medium",
+                problem="Issue on task 1.",
+                correction="Fix task 1.",
+            ),
+            EditorialIssue(
+                task_id=2,
+                category="style",
+                severity="medium",
+                problem="Issue on task 2.",
+                correction="Fix task 2.",
+            ),
+        ],
+        sections_to_revise=[2, 1],  # Out of plan order!
+    )
+
+    state = make_state(
+        plan=plan,
+        review=review,
+        sections={
+            1: SectionOutput(body_markdown="## Task 1\n\nNeeds revision."),
+            2: SectionOutput(body_markdown="## Task 2\n\nNeeds revision."),
+        },
+        evidence=[
+            make_evidence(1),
+            make_evidence(2),
+        ],
+    )
+
+    sends = route_after_editor(state)
+
+    # Must be routed in plan order [1, 2], not requested order [2, 1]
+    assert [send.arg["task"]["id"] for send in sends] == [1, 2]
 
 
 def test_revision_send_rejects_unknown_evidence_ref_deterministically() -> None:
