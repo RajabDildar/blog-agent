@@ -443,3 +443,60 @@ def check_acceptance_guardrails(
         )
 
     return failures
+
+
+def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Generate blog evaluation reports and guardrail checks.")
+    parser.add_argument("--baseline", type=Path, help="Path to baseline experiment directory")
+    parser.add_argument("--candidate", type=Path, help="Path to candidate experiment directory")
+    parser.add_argument("--run", type=Path, help="Path to single experiment directory to check")
+
+    args = parser.parse_args()
+
+    if args.baseline and args.candidate:
+        baseline_results = json.loads((args.baseline / "results.json").read_text(encoding="utf-8"))
+        candidate_results = json.loads((args.candidate / "results.json").read_text(encoding="utf-8"))
+
+        baseline_runs = [EvaluationRun.model_validate(r) for r in baseline_results]
+        candidate_runs = [EvaluationRun.model_validate(r) for r in candidate_results]
+
+        comparison = build_comparison_report(baseline_runs=baseline_runs, candidate_runs=candidate_runs)
+        print(comparison)
+
+        failures = check_acceptance_guardrails(candidate_runs)
+        print("\n## Acceptance Guardrail Status")
+        if not failures:
+            print("PASSED: All acceptance guardrails met!")
+        else:
+            print("FAILED: The following guardrail checks failed:")
+            for f in failures:
+                print(f"  - {f}")
+
+    elif args.run or args.baseline or args.candidate:
+        run_dir = args.run or args.candidate or args.baseline
+        results_file = run_dir / "results.json"
+        if not results_file.exists():
+            print(f"Error: {results_file} does not exist.")
+            return
+
+        results_data = json.loads(results_file.read_text(encoding="utf-8"))
+        runs = [EvaluationRun.model_validate(r) for r in results_data]
+
+        print(build_report(runs))
+
+        failures = check_acceptance_guardrails(runs)
+        print("\n## Acceptance Guardrail Status")
+        if not failures:
+            print("PASSED: All acceptance guardrails met!")
+        else:
+            print("FAILED: The following guardrail checks failed:")
+            for f in failures:
+                print(f"  - {f}")
+    else:
+        parser.print_help()
+
+
+if __name__ == "__main__":
+    main()
