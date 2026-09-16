@@ -25,6 +25,37 @@ from services.run_diagnostics import (
 )
 
 
+def _citation_requirement_block(
+    task: Task,
+    evidence: list[ResearchEvidence],
+) -> str:
+    """Return a plain-text Citation Requirements block for the worker prompt."""
+    if not task.requires_citations:
+        return (
+            "CITATION REQUIREMENTS:\n"
+            "- requires_citations is FALSE for this section.\n"
+            "- Do NOT add external citation links.\n"
+        )
+
+    url_lines = "\n".join(
+        f"  * {e.url}  ({e.source_title})"
+        for e in evidence
+        if e.url
+    ) or "  (no evidence assigned)"
+
+    return (
+        "CITATION REQUIREMENTS (MANDATORY):\n"
+        "- requires_citations is TRUE for this section.\n"
+        "- You MUST include at least one inline Markdown citation link in the body.\n"
+        "- ONLY format accepted:  [Anchor Text](URL)\n"
+        "- Example: According to [Report Title](https://example.com), X grew by 40%.\n"
+        "- Allowed URLs for this section:\n"
+        f"{url_lines}\n"
+        "- DO NOT use raw URLs, bracketed URLs (【url】), or footnotes ([^1]).\n"
+        "- DO NOT write text-only attributions like '(source: Report, 2026)'.\n"
+    )
+
+
 def worker_node(payload: dict) -> dict:
     task = Task(**payload["task"])
     plan = Plan(**payload["plan"])
@@ -82,7 +113,8 @@ def worker_node(payload: dict) -> dict:
                     f"Current section:\n"
                     f"{task.model_dump()}\n\n"
                     f"Evidence:\n"
-                    f"{evidence_text}"
+                    f"{evidence_text}\n\n"
+                    + _citation_requirement_block(task, evidence)
                 )
             ),
         ],
@@ -102,8 +134,8 @@ def worker_node(payload: dict) -> dict:
             errors=errors,
             scope="section",
             expected_title=task.title,
-            diagnostics=diagnostics,
         ),
+            diagnostics=diagnostics,
     )
 
     if gate.errors:

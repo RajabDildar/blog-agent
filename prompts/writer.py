@@ -35,8 +35,28 @@ GROUNDING
   - higher confidence scores
 - Do not strengthen a claim beyond what the evidence supports.
 - Never invent URLs.
-- If citations are required, cite only supplied URLs.
 - When evidence quality is weak, narrow the wording instead of making stronger claims.
+
+CITATIONS
+
+When requires_citations is true for the current section, you MUST embed inline
+Markdown links for every factual claim drawn from the assigned evidence.
+
+MANDATORY FORMAT:
+  [Anchor Text](URL)
+
+Example: "According to [Report Title](https://example.com), AI adoption grew 40%."
+
+RULES:
+- Use ONLY the URLs provided in the Evidence block for this section.
+- Every key external claim or statistic MUST have an inline link.
+- Do NOT write raw URLs: https://example.com
+- Do NOT use full-width brackets: 【https://example.com】
+- Do NOT use footnotes: [^1] or [^1]: https://example.com
+- Do NOT write text-only attributions: "(source: Report, 2026)"
+- A standard inline Markdown link [Text](URL) is the ONLY accepted format.
+
+When requires_citations is false, do NOT add external citation links.
 
 MARKDOWN
 

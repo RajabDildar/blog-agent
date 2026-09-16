@@ -52,10 +52,10 @@ EVAL_JUDGE_MODEL=gemini-3.1-flash-lite
 Run a named experiment with caller-supplied pipeline provenance:
 
 ```bash
-uv run python -m eval.run_eval \
+uv run python3 -m eval.run_eval \
   --experiment-name phase8-remediation-baseline \
   --purpose "Baseline after multimodal judge semantics" \
-  --pipeline-commit 70765747323e0560c109e5060dca3eac23918a05
+  --pipeline-commit <commit-hash>
 ```
 
 Each experiment writes an immutable `manifest.json`, `results.json`, `report.md`, copied final articles, and diagnostics. Existing successful, fully scored topics are skipped; use `--rerun-failed` to retry incomplete or failed topics. The judge receives generated image bytes as Gemini multimodal inputs, so scores from pre-Step-0 text-only judging are not directly comparable.
@@ -65,7 +65,7 @@ Each experiment writes an immutable `manifest.json`, `results.json`, `report.md`
 Run a candidate experiment:
 
 ```bash
-uv run python -m eval.run_eval \
+uv run python3 -m eval.run_eval \
   --experiment-name phase8-remediation-candidate \
   --purpose "Final remediation candidate evaluation"
 ```
@@ -73,7 +73,7 @@ uv run python -m eval.run_eval \
 Compare a candidate experiment against baseline to generate a comparison report with guardrail checks:
 
 ```bash
-uv run python -m eval.report \
+uv run python3 -m eval.report \
   --baseline eval/runs/phase8-remediation-baseline \
   --candidate eval/runs/phase8-remediation-candidate
 ```

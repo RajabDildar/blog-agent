@@ -28,6 +28,37 @@ from services.run_diagnostics import (
 )
 
 
+def _revision_citation_block(
+    task: Task,
+    evidence: list[ResearchEvidence],
+) -> str:
+    """Return a plain-text Citation Requirements block for the revision prompt."""
+    if not task.requires_citations:
+        return (
+            "CITATION REQUIREMENTS:\n"
+            "- requires_citations is FALSE for this section.\n"
+            "- Do NOT add external citation links.\n"
+        )
+
+    url_lines = "\n".join(
+        f"  * {e.url}  ({e.source_title})"
+        for e in evidence
+        if e.url
+    ) or "  (no evidence assigned)"
+
+    return (
+        "CITATION REQUIREMENTS (MANDATORY):\n"
+        "- requires_citations is TRUE for this section.\n"
+        "- You MUST add inline Markdown citation links to fix missing-citation issues.\n"
+        "- ONLY format accepted:  [Anchor Text](URL)\n"
+        "- Example: According to [Report Title](https://example.com), X grew by 40%.\n"
+        "- Allowed URLs for this section:\n"
+        f"{url_lines}\n"
+        "- DO NOT use raw URLs, bracketed URLs (\u3010url\u3011), or footnotes ([^1]).\n"
+        "- DO NOT write text-only attributions like '(source: Report, 2026)'.\n"
+    )
+
+
 def revision_node(
     payload: dict,
 ) -> dict:
@@ -48,6 +79,17 @@ def revision_node(
         method="json_mode",
     )
 
+    evidence_text = "\n".join(
+        (
+            f"- Claim: {e.claim}\n"
+            f"  Source: {e.source_title}\n"
+            f"  URL: {e.url}\n"
+            f"  Support strength: {e.support_strength}\n"
+            f"  Evidence: {e.supporting_text}"
+        )
+        for e in evidence
+    )
+
     result = invoke_with_groq_admission(
         controller=groq_admission_controller,
         runnable=reviser,
@@ -62,7 +104,8 @@ def revision_node(
                     f"Editor issues:\n"
                     f"{[i.model_dump() for i in issues]}\n\n"
                     f"Assigned evidence:\n"
-                    f"{[item.model_dump() for item in evidence]}"
+                    f"{evidence_text}\n\n"
+                    + _revision_citation_block(task, evidence)
                 )
             ),
         ],
@@ -82,8 +125,8 @@ def revision_node(
             errors=errors,
             scope="section",
             expected_title=task.title,
-            diagnostics=diagnostics,
         ),
+            diagnostics=diagnostics,
     )
 
     if gate.errors:

@@ -13,13 +13,31 @@ Do not:
 - introduce unsupported facts
 - add filler
 
-Evidence rules:
+EVIDENCE RULES
 
 - Use only the assigned evidence when correcting unsupported claims.
 - If the evidence supports the claim, rewrite using that evidence.
 - If the evidence does not support the claim, soften the statement or remove it.
 - Never invent citations, URLs, or sources.
 - Do not introduce facts that are not supported by the assigned evidence.
+
+CITATION REPAIR
+
+When an editor issue says "This section requires citations but contains no
+citation links" or "The citation URL is not backed by evidence assigned to
+this task", you MUST fix it by embedding inline Markdown links.
+
+MANDATORY FORMAT:
+  [Anchor Text](URL)
+
+Example: "According to [Report Title](https://example.com), X grew by 40%."
+
+RULES:
+- Use ONLY the URLs provided in the Assigned Evidence block.
+- Insert inline Markdown links [Text](URL) next to every key external claim.
+- DO NOT use raw URLs, full-width bracket URLs (【url】), or footnotes ([^1]).
+- DO NOT write text-only attributions like "(source: Report, 2026)".
+- Replace or remove any citation URL that is not in the Assigned Evidence.
 
 MARKDOWN
 
