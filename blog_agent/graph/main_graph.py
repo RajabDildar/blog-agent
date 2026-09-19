@@ -867,15 +867,15 @@ def resume(
         _thread_config(run_id),
     )
 
-    if state.next == ():
-        raise ValueError(f"Run {run_id} has already completed successfully.")
-
     state_tasks = getattr(state, "tasks", None)
     pending_interrupts = (
         state_tasks[0].interrupts
         if state_tasks and getattr(state_tasks[0], "interrupts", None)
         else ()
     )
+
+    if state.next == () and not pending_interrupts:
+        raise ValueError(f"Run {run_id} has already completed successfully.")
 
     if human_response is not None:
         if not pending_interrupts:
