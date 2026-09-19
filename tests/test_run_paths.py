@@ -17,6 +17,12 @@ def test_run_images_are_isolated_by_run_id():
     assert run_images_dir(RUN_ID) == Path("runs") / RUN_ID / "images"
 
 
+def test_hyphenated_uuid_run_id_is_valid():
+    hyphenated_id = "f3e66009-5ddc-434f-8b30-84ba18643de1"
+    assert run_images_dir(hyphenated_id) == Path("runs") / hyphenated_id / "images"
+
+
+
 def test_staged_image_path_is_inside_run_directory():
     assert (
         staged_image_path(

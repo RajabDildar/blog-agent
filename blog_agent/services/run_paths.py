@@ -6,7 +6,9 @@ from blog_agent.services.markdown import safe_stem
 RUNS_ROOT = Path("runs")
 PUBLISHED_IMAGES_ROOT = Path("images")
 
-_RUN_ID_RE = re.compile(r"^[a-f0-9]{32}$")
+_RUN_ID_RE = re.compile(
+    r"^[a-f0-9]{32}$|^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+)
 
 
 def _validate_run_id(run_id: str) -> None:
