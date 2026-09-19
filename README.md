@@ -35,6 +35,23 @@ Graph execution is checkpointed, so a run that fails partway through — a provi
 START
   |
   v
+Intent Gateway
+  |
+  +------ blocked / invalid -------> END
+  |
+  | (safe input)
+  |
+  +-- clear --+-- vague ------------> interrupt()
+  |            |                          |
+  |            |                   clarification
+  |            |                   user selects
+  |            |                   resume(run_id, human_response=...)
+  |            |                          |
+  |            +----------+---------------+
+  |                       |
+  |                finalized topic
+  |
+  v
 Router
   |
   +---- Research ----+
@@ -120,18 +137,23 @@ LangGraph checkpoints state at every super-step boundary along this path, so a f
 ```text
 blog-agent/
 ├── blog_agent/
-│   ├── __init__.py
+│   ├── __init__.py          # public API: run(), resume()
 │   ├── config/
 │   │   └── settings.py
 │   ├── graph/
 │   │   └── main_graph.py
 │   ├── nodes/
+│   │   ├── intent_gateway.py  # Phase 2: first node; safety, scope, HITL
+│   │   └── ...                # router, research, orchestrator, workers, ...
 │   ├── prompts/
+│   │   ├── intent_gateway.py  # Phase 2: intent analysis prompts
+│   │   └── ...                # router, editor, writer, ...
 │   ├── schemas/
 │   │   ├── context.py
-│   │   ├── models.py
-│   │   └── state.py
+│   │   ├── models.py          # IntentAnalysis, IntentHumanResponse, ...
+│   │   └── state.py           # State with intent/HITL fields
 │   └── services/
+│       ├── intent_analysis.py # Phase 2: Gemini → Groq intent service
 │       ├── article_structure.py
 │       ├── checkpointer.py
 │       ├── citation_verification.py
@@ -182,6 +204,8 @@ blog-agent/
 | LLM framework | LangChain |
 | Writing and revision | Groq |
 | Routing, planning, research processing, editing | Gemini |
+| Intent analysis (primary) | Gemini |
+| Intent analysis (fallback) | Groq |
 | Web research | Tavily |
 | Image generation | Cloudflare Workers AI |
 | Structured data | Pydantic |
@@ -197,10 +221,12 @@ Model names are configured through environment variables in `blog_agent/config/s
  
 The current workflow uses:
  
-- Groq for section writing and revision/repair.
+- Gemini as the primary intent analysis model (safety, scope, clarification classification).
+- Groq as the intent analysis fallback model; also used for section writing and revision/repair.
 - Gemini for routing, research extraction, article planning, editorial review, and image planning.
 - Tavily for web search.
 - Cloudflare Workers AI for image generation.
+ 
 The repository's `.env.example` contains the current environment variable names and model settings.
  
 ## Setup
@@ -254,7 +280,7 @@ Start a new run:
 uv run python3 main.py
 ```
  
-Enter a topic when prompted:
+Enter your article request when prompted:
  
 ```text
 Enter blog topic: AI agents in production
@@ -265,6 +291,15 @@ The run ID is printed immediately after it is generated:
 ```text
 Run ID: 3f9a2c1e4b7d4a9f8c2e1a6b5d3f0c9a
 ```
+ 
+The Intent Gateway evaluates the request before generation begins:
+ 
+- **Clear, safe input** — the topic is finalized immediately and the existing generation pipeline starts.
+- **Vague input** — the CLI presents a clarification question with three options. Select one or type a custom response; the graph resumes with the refined topic.
+- **Still-vague after clarification** — the system proposes a concrete topic and asks for Proceed or Cancel confirmation.
+- **Blocked input** — the request is rejected with a brief explanation and alternative topic suggestions.
+- **Invalid / out-of-scope input** — the request is rejected with a message asking for a technical article topic.
+- **Intent analysis unavailable** — if both Gemini and Groq intent providers fail, generation is aborted rather than bypassing safety.
  
 A successful run reports the generated title, revision count, image counts, output path, and run diagnostics path.
  
@@ -283,7 +318,10 @@ Resume behavior:
 - A run that already completed successfully cannot be resumed.
 - An unknown run ID cannot be resumed.
 - Run diagnostics are continued, not overwritten — the original `run_id` and start time are preserved, and a `run_resumed` event is appended to the existing event history.
+ 
 `run()` never resumes an existing thread implicitly. Supplying a `run_id` that is already in use raises an error instructing you to use `resume()` instead.
+ 
+`resume(run_id, human_response=...)` is used to deliver a clarification or confirmation response to a graph that is waiting at a LangGraph HITL interrupt.
  
 ## Output
  
@@ -408,6 +446,11 @@ uv run pytest
  
 The tests cover the main reliability boundaries, including:
  
+- Intent analysis: Gemini primary, Groq fallback, and double-provider failure
+- Intent gateway: deterministic pre-validation, safety blocking, scope rejection, nonsense rejection
+- LangGraph HITL interrupt and resume for clarification and confirmation flows
+- Safety classification: contextual acceptance and blocking across sensitive topics
+- Public package API isolation (`run`, `resume`)
 - Markdown parsing and validation
 - section validation
 - deterministic and LLM Markdown repair
@@ -420,12 +463,14 @@ The tests cover the main reliability boundaries, including:
 - provider retry classification
 - LangGraph retry behavior
 - provider exception preservation
-- run diagnostics
+- run diagnostics (including intent event tracking)
 - checkpointer creation and lifecycle
 - `run()` / `resume()` contract semantics
 - resume recovery for worker, editor, article-repair, and image-generation failures
 - resume recovery after real process termination (subprocess kill and restart)
 - diagnostics continuity across a resume
+ 
+**411 tests pass** across 47 test modules as of Phase 2.
 ## Development principles
  
 The project intentionally keeps the workflow small and explicit.
