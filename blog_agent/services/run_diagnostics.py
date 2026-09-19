@@ -25,13 +25,22 @@ class RunDiagnostics:
         self,
         *,
         run_id: str,
-        topic: str,
+        topic: str = "",
+        original_input: str | None = None,
     ):
         self.run_id = run_id
+        self.original_input = (
+            original_input if original_input is not None else topic
+        )
         self.topic = topic
         self.started_at = time.time()
 
         self.status = "running"
+        self.intent_status = ""
+        self.intent_category = ""
+        self.intent_message = ""
+        self.clarification_count = 0
+        self.proposed_topic = ""
 
         self.resume_after: float | None = None
 
@@ -67,8 +76,14 @@ class RunDiagnostics:
     def _snapshot(self) -> dict[str, Any]:
         return {
             "run_id": self.run_id,
+            "original_input": self.original_input,
             "topic": self.topic,
             "status": self.status,
+            "intent_status": self.intent_status,
+            "intent_category": self.intent_category,
+            "intent_message": self.intent_message,
+            "clarification_count": self.clarification_count,
+            "proposed_topic": self.proposed_topic,
             "resume_after": self.resume_after,
             "started_at": self.started_at,
             "finished_at": (time.time() if self.status != "running" else None),
@@ -288,6 +303,130 @@ class RunDiagnostics:
                 errors=list(errors),
             )
 
+    def record_intent_check_started(self) -> None:
+        with self._lock:
+            self._record_event(event="intent_check_started")
+
+    def record_intent_check_succeeded(
+        self,
+        *,
+        provider: str,
+        outcome: str,
+    ) -> None:
+        with self._lock:
+            self._record_event(
+                event="intent_check_succeeded",
+                provider=provider,
+                outcome=outcome,
+            )
+
+    def record_intent_provider_fallback(
+        self,
+        *,
+        failed_provider: str,
+        exc: Exception,
+    ) -> None:
+        with self._lock:
+            self._record_event(
+                event="intent_provider_fallback",
+                failed_provider=failed_provider,
+                exception_type=type(exc).__name__,
+                message=str(exc),
+            )
+
+    def record_clarification_required(
+        self,
+        *,
+        question: str,
+        options: list[str],
+    ) -> None:
+        with self._lock:
+            self.clarification_count += 1
+            self.intent_status = "needs_clarification"
+            self._record_event(
+                event="clarification_required",
+                question=question,
+                options=list(options),
+            )
+
+    def record_topic_confirmation_required(
+        self,
+        *,
+        proposed_topic: str,
+    ) -> None:
+        with self._lock:
+            self.intent_status = "needs_confirmation"
+            self.proposed_topic = proposed_topic
+            self._record_event(
+                event="topic_confirmation_required",
+                proposed_topic=proposed_topic,
+            )
+
+    def record_topic_finalized(
+        self,
+        topic: str,
+    ) -> None:
+        with self._lock:
+            self.topic = topic
+            self.intent_status = "safe"
+            self._record_event(
+                event="topic_finalized",
+                topic=topic,
+            )
+
+    def record_input_blocked(
+        self,
+        *,
+        category: str,
+        message: str,
+    ) -> None:
+        with self._lock:
+            self.status = "blocked"
+            self.intent_status = "blocked"
+            self.intent_category = category
+            self.intent_message = message
+            self._record_event(
+                event="input_blocked",
+                category=category,
+                message=message,
+            )
+
+    def record_input_invalid(
+        self,
+        *,
+        reason: str,
+        message: str,
+    ) -> None:
+        with self._lock:
+            self.status = "invalid"
+            self.intent_status = "invalid"
+            self.intent_category = reason
+            self.intent_message = message
+            self._record_event(
+                event="input_invalid",
+                reason=reason,
+                message=message,
+            )
+
+    def record_input_cancelled(self) -> None:
+        with self._lock:
+            self.status = "cancelled"
+            self.intent_status = "cancelled"
+            self._record_event(
+                event="input_cancelled",
+            )
+
+    def record_intent_check_failed(
+        self,
+        exc: Exception,
+    ) -> None:
+        with self._lock:
+            self._record_event(
+                event="intent_check_failed",
+                exception_type=type(exc).__name__,
+                message=str(exc),
+            )
+
     @classmethod
     def from_dict(
         cls,
@@ -296,6 +435,32 @@ class RunDiagnostics:
         diagnostics = cls(
             run_id=data["run_id"],
             topic=data.get("topic", ""),
+            original_input=data.get("original_input"),
+        )
+
+        diagnostics.intent_status = data.get(
+            "intent_status",
+            "",
+        )
+
+        diagnostics.intent_category = data.get(
+            "intent_category",
+            "",
+        )
+
+        diagnostics.intent_message = data.get(
+            "intent_message",
+            "",
+        )
+
+        diagnostics.clarification_count = data.get(
+            "clarification_count",
+            0,
+        )
+
+        diagnostics.proposed_topic = data.get(
+            "proposed_topic",
+            "",
         )
 
         diagnostics.started_at = data.get(
@@ -541,10 +706,24 @@ def format_cli_summary(
 
     message = failure.get("message") or "unknown"
 
-    return "\n".join(
+    lines = [
+        f"Run ID: {run_id}",
+        f"Status: {status}",
+    ]
+
+    if data.get("original_input"):
+        lines.append(f"Original Input: {data['original_input']}")
+    if data.get("topic"):
+        lines.append(f"Topic: {data['topic']}")
+    if data.get("intent_status"):
+        lines.append(f"Intent Status: {data['intent_status']}")
+    if data.get("intent_category"):
+        lines.append(f"Intent Category: {data['intent_category']}")
+    if data.get("clarification_count"):
+        lines.append(f"Clarifications: {data['clarification_count']}")
+
+    lines.extend(
         [
-            f"Run ID: {run_id}",
-            f"Status: {status}",
             f"Stage: {stage}",
             f"Provider: {provider}",
             f"Attempts: {attempts}",
@@ -555,6 +734,8 @@ def format_cli_summary(
             (f"Diagnostics: {diagnostics_path(run_id)}"),
         ]
     )
+
+    return "\n".join(lines)
 
 
 def instrument_node(

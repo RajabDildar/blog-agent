@@ -1,5 +1,5 @@
 import operator
-from typing import Annotated, TypedDict
+from typing import Annotated, Literal, TypedDict
 
 from blog_agent.schemas.models import (
     EditorialIssue,
@@ -12,7 +12,27 @@ from blog_agent.schemas.models import (
 
 class State(TypedDict):
     run_id: str
+    original_input: str
     topic: str
+
+    intent_status: Literal[
+        "pending",
+        "safe",
+        "needs_clarification",
+        "needs_confirmation",
+        "blocked",
+        "invalid",
+        "cancelled",
+    ]
+    intent_category: str
+    intent_message: str
+
+    clarification_question: str
+    clarification_options: list[str]
+    clarification_rounds: int
+    clarification_response: str
+
+    proposed_topic: str
 
     mode: str
     needs_research: bool

@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 SourceType = Literal[
     "official_documentation",
@@ -312,3 +312,86 @@ class GlobalImagePlan(BaseModel):
 
 class MarkdownRepairOutput(BaseModel):
     markdown: str
+
+
+class IntentAnalysis(BaseModel):
+    outcome: Literal[
+        "accepted",
+        "needs_clarification",
+        "blocked",
+        "invalid",
+    ]
+
+    normalized_topic: str = ""
+
+    block_category: Literal[
+        "",
+        "explicit_sexual",
+        "graphic_violence",
+        "self_harm_instructions",
+        "illegal_wrongdoing",
+        "cyber_abuse",
+        "privacy_abuse",
+        "hate_or_extremist_advocacy",
+    ] = ""
+
+    invalid_reason: Literal[
+        "",
+        "nonsense",
+        "not_a_blog_request",
+        "out_of_scope_non_technical",
+        "insufficient_information",
+    ] = ""
+
+    user_message: str = ""
+    clarification_question: str = ""
+    clarification_options: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_outcome_fields(self) -> "IntentAnalysis":
+        if self.outcome == "accepted":
+            if not self.normalized_topic or not self.normalized_topic.strip():
+                raise ValueError("accepted outcome requires non-empty normalized_topic")
+        elif self.outcome == "needs_clarification":
+            if not self.clarification_question or not self.clarification_question.strip():
+                raise ValueError("needs_clarification outcome requires clarification_question")
+            if len(self.clarification_options) != 3:
+                raise ValueError("needs_clarification outcome requires exactly 3 clarification_options")
+            stripped_options = [opt.strip() for opt in self.clarification_options]
+            if any(not opt for opt in stripped_options):
+                raise ValueError("clarification_options must be non-empty strings")
+            if len(set(stripped_options)) != 3:
+                raise ValueError("clarification_options must be distinct")
+        elif self.outcome == "blocked":
+            if not self.block_category:
+                raise ValueError("blocked outcome requires a supported block_category")
+            if not self.user_message or not self.user_message.strip():
+                raise ValueError("blocked outcome requires a safe user_message")
+        elif self.outcome == "invalid":
+            if not self.invalid_reason:
+                raise ValueError("invalid outcome requires invalid_reason")
+            if not self.user_message or not self.user_message.strip():
+                raise ValueError("invalid outcome requires user_message")
+        return self
+
+
+class IntentHumanResponse(BaseModel):
+    action: Literal[
+        "select_option",
+        "custom_input",
+        "proceed",
+        "cancel",
+    ]
+    value: str = ""
+
+    @model_validator(mode="after")
+    def validate_action(self) -> "IntentHumanResponse":
+        if self.action in ("select_option", "custom_input"):
+            if not self.value or not self.value.strip():
+                raise ValueError(f"{self.action} requires non-empty value")
+        return self
+
+
+class ProposedTopicAnalysis(BaseModel):
+    proposed_topic: str = Field(..., min_length=3)
+

@@ -233,6 +233,23 @@ GEMINI_MODEL = os.getenv(
     "gemini-3.1-flash-lite",
 )
 
+INTENT_GEMINI_MODEL = os.getenv(
+    "INTENT_GEMINI_MODEL",
+    GEMINI_MODEL,
+)
+
+GROQ_INTENT_MODEL = os.getenv(
+    "GROQ_INTENT_MODEL",
+    "llama-3.3-70b-versatile",
+)
+
+MAX_USER_INPUT_CHARS = int(
+    os.getenv(
+        "MAX_USER_INPUT_CHARS",
+        "1000",
+    )
+)
+
 EVAL_JUDGE_MODEL = os.getenv(
     "EVAL_JUDGE_MODEL",
     "gemini-3.1-flash-lite",

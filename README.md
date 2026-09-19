@@ -2,12 +2,14 @@
  
 A Python-based technical blog generation workflow built with LangGraph, LangChain, Groq, Gemini, Tavily, and Cloudflare Workers AI.
  
-The agent takes a topic, decides whether research is needed, plans the article, generates sections in parallel, reviews and revises the content, validates Markdown, plans and generates images, validates the final artifact, and saves the result only after the final checks pass.
+The agent validates user requests via an Intent Gateway, supports human-in-the-loop clarification for vague topics, decides whether research is needed via a research router, plans the article, generates sections in parallel, reviews and revises the content, validates Markdown, plans and generates images, validates the final artifact, and saves the result only after the final checks pass.
  
 Graph execution is checkpointed, so a run that fails partway through — a provider outage, a node error, or even the process being killed — can be resumed from the last completed step instead of starting over.
  
 ## What it does
  
+- Validates user input safety, technical scope, and specificity via the Intent Gateway.
+- Supports LangGraph human-in-the-loop clarification for vague topics.
 - Routes topics between closed-book and research-backed generation.
 - Uses Tavily for web research when required.
 - Creates a structured article plan with ordered sections.

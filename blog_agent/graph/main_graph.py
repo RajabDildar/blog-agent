@@ -3,7 +3,15 @@ from uuid import uuid4
 
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
-from langgraph.types import Send
+from langgraph.types import Command, Send
+
+from blog_agent.nodes.intent_gateway import (
+    blocked_terminal_node,
+    cancelled_terminal_node,
+    invalid_terminal_node,
+    intent_gateway_node,
+)
+from blog_agent.schemas.models import IntentHumanResponse
 
 from blog_agent.config.settings import (
     CHECKPOINT_SQLITE_PATH,
@@ -342,6 +350,26 @@ def final_validation_failure_node(
     )
 
 
+def route_after_intent_gateway(
+    state: State,
+) -> str:
+    status = state.get("intent_status")
+
+    if status == "safe":
+        return "router"
+
+    if status == "blocked":
+        return "blocked_terminal"
+
+    if status == "invalid":
+        return "invalid_terminal"
+
+    if status == "cancelled":
+        return "cancelled_terminal"
+
+    return END
+
+
 # Building graph
 
 
@@ -354,6 +382,39 @@ def build_graph(
     )
 
     # ----------------------- Nodes ---------------------------
+
+    builder.add_node(
+        "intent_gateway",
+        instrument_node(
+            "intent_gateway",
+            intent_gateway_node,
+            provider="gemini+groq",
+        ),
+    )
+
+    builder.add_node(
+        "blocked_terminal",
+        instrument_node(
+            "blocked_terminal",
+            blocked_terminal_node,
+        ),
+    )
+
+    builder.add_node(
+        "invalid_terminal",
+        instrument_node(
+            "invalid_terminal",
+            invalid_terminal_node,
+        ),
+    )
+
+    builder.add_node(
+        "cancelled_terminal",
+        instrument_node(
+            "cancelled_terminal",
+            cancelled_terminal_node,
+        ),
+    )
 
     builder.add_node(
         "router",
@@ -519,7 +580,33 @@ def build_graph(
 
     builder.add_edge(
         START,
-        "router",
+        "intent_gateway",
+    )
+
+    builder.add_conditional_edges(
+        "intent_gateway",
+        route_after_intent_gateway,
+        {
+            "router": "router",
+            "blocked_terminal": "blocked_terminal",
+            "invalid_terminal": "invalid_terminal",
+            "cancelled_terminal": "cancelled_terminal",
+        },
+    )
+
+    builder.add_edge(
+        "blocked_terminal",
+        END,
+    )
+
+    builder.add_edge(
+        "invalid_terminal",
+        END,
+    )
+
+    builder.add_edge(
+        "cancelled_terminal",
+        END,
     )
 
     builder.add_conditional_edges(
@@ -668,7 +755,7 @@ def _pause_rate_limited_run(
 
 
 def run(
-    topic: str,
+    user_input: str,
     *,
     run_id: str | None = None,
 ):
@@ -683,7 +770,8 @@ def run(
 
     diagnostics = RunDiagnostics(
         run_id=run_id,
-        topic=topic,
+        original_input=user_input,
+        topic="",
     )
 
     context = {
@@ -694,7 +782,16 @@ def run(
         result = app.invoke(
             {
                 "run_id": run_id,
-                "topic": topic,
+                "original_input": user_input,
+                "topic": "",
+                "intent_status": "pending",
+                "intent_category": "",
+                "intent_message": "",
+                "clarification_question": "",
+                "clarification_options": [],
+                "clarification_rounds": 0,
+                "clarification_response": "",
+                "proposed_topic": "",
                 "mode": "",
                 "needs_research": False,
                 "queries": [],
@@ -736,6 +833,14 @@ def run(
         diagnostics.finish_failure(exc)
         raise
 
+    current_state = app.get_state(_thread_config(run_id))
+    current_tasks = getattr(current_state, "tasks", None)
+    if current_tasks and getattr(current_tasks[0], "interrupts", None):
+        return result
+
+    if result.get("intent_status") in ("blocked", "invalid", "cancelled"):
+        return result
+
     diagnostics.finish_success(result)
 
     return result
@@ -743,6 +848,8 @@ def run(
 
 def resume(
     run_id: str,
+    *,
+    human_response: IntentHumanResponse | None = None,
 ):
     config = {
         **_thread_config(run_id),
@@ -763,6 +870,30 @@ def resume(
     if state.next == ():
         raise ValueError(f"Run {run_id} has already completed successfully.")
 
+    state_tasks = getattr(state, "tasks", None)
+    pending_interrupts = (
+        state_tasks[0].interrupts
+        if state_tasks and getattr(state_tasks[0], "interrupts", None)
+        else ()
+    )
+
+    if human_response is not None:
+        if not pending_interrupts:
+            raise ValueError(f"Run {run_id} has no pending human interrupt.")
+
+        if isinstance(human_response, IntentHumanResponse):
+            resume_payload = human_response.model_dump()
+        elif isinstance(human_response, dict):
+            resume_payload = human_response
+        else:
+            resume_payload = human_response
+
+        invoke_arg = Command(resume=resume_payload)
+    else:
+        if pending_interrupts:
+            raise ValueError(f"Run {run_id} requires a human response to resume.")
+        invoke_arg = None
+
     diagnostics_data = load_diagnostics(
         run_id,
     )
@@ -776,10 +907,15 @@ def resume(
             "topic",
             "",
         )
+        original_input = state.values.get(
+            "original_input",
+            topic,
+        )
 
         diagnostics = RunDiagnostics(
             run_id=run_id,
             topic=topic,
+            original_input=original_input,
         )
 
     if diagnostics.status == "paused_rate_limit":
@@ -799,7 +935,7 @@ def resume(
 
     try:
         result = app.invoke(
-            None,
+            invoke_arg,
             config,
             context=context,
             durability="sync",
@@ -819,8 +955,17 @@ def resume(
         )
         raise
 
+    current_state = app.get_state(_thread_config(run_id))
+    current_tasks = getattr(current_state, "tasks", None)
+    if current_tasks and getattr(current_tasks[0], "interrupts", None):
+        return result
+
+    if result.get("intent_status") in ("blocked", "invalid", "cancelled"):
+        return result
+
     diagnostics.finish_success(
         result,
     )
 
     return result
+
