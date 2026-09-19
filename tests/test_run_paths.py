@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from services.run_paths import (
+from blog_agent.services.run_paths import (
     markdown_image_path,
     published_image_path,
     published_images_dir,

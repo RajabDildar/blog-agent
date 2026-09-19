@@ -3,7 +3,7 @@ import httpx
 from langgraph.graph import END, START, StateGraph
 from typing_extensions import TypedDict
 
-from config.settings import provider_retry_policy
+from blog_agent.config.settings import provider_retry_policy
 
 
 class RetryState(TypedDict):

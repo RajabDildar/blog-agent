@@ -10,7 +10,7 @@ from pathlib import Path
 from langgraph.graph import END, START, StateGraph
 from typing_extensions import TypedDict
 
-from services.checkpointer import create_checkpointer
+from blog_agent.services.checkpointer import create_checkpointer
 
 
 class RecoveryState(TypedDict):

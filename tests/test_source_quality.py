@@ -1,4 +1,4 @@
-from services.source_quality import classify_source
+from blog_agent.services.source_quality import classify_source
 
 
 def test_official_documentation_gets_high_authority():

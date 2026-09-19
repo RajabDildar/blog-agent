@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from services.rate_limits import (
+from blog_agent.services.rate_limits import (
     extract_rate_limit_info,
     get_provider_retry_delay_seconds,
     is_rate_limit_error,

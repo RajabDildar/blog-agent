@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from nodes import image_generator
-from nodes.image_generator import generate_images_node
-from schemas.models import Plan, Task
+from blog_agent.nodes import image_generator
+from blog_agent.nodes.image_generator import generate_images_node
+from blog_agent.schemas.models import Plan, Task
 
 RUN_ID = "b" * 32
 

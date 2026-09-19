@@ -1,6 +1,6 @@
 import pytest
 
-from services.markdown_parser import (
+from blog_agent.services.markdown_parser import (
     find_unclosed_fence,
     get_headings,
     get_image_sources,

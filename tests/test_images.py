@@ -1,8 +1,8 @@
 import pytest
 
-from schemas.models import ImageSpec
-from services.markdown import insert_image
-from services.markdown_parser import get_image_sources
+from blog_agent.schemas.models import ImageSpec
+from blog_agent.services.markdown import insert_image
+from blog_agent.services.markdown_parser import get_image_sources
 
 
 def make_image(

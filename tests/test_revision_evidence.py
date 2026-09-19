@@ -1,7 +1,7 @@
 import pytest
 
-from graph.main_graph import route_after_editor
-from schemas.models import (
+from blog_agent.graph.main_graph import route_after_editor
+from blog_agent.schemas.models import (
     EditorialIssue,
     EditorialReview,
     Plan,

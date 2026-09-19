@@ -16,8 +16,8 @@ citation links":
    the full repair pipeline and are extractable by extract_markdown_links().
 """
 
-from services.citation_verification import extract_markdown_links
-from services.markdown_repair import (
+from blog_agent.services.citation_verification import extract_markdown_links
+from blog_agent.services.markdown_repair import (
     normalize_citation_artifacts,
     repair_section_structure,
 )

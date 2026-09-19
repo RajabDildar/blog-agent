@@ -1,10 +1,10 @@
 from types import SimpleNamespace
 
-from config.settings import (
+from blog_agent.config.settings import (
     RATE_LIMIT_SHORT_WAIT_SECONDS,
     is_transient_provider_error,
 )
-from services.rate_limits import (
+from blog_agent.services.rate_limits import (
     extract_rate_limit_info,
     get_provider_retry_delay_seconds,
 )

@@ -4,7 +4,7 @@ import sys
 import pytest
 
 import main
-from services.run_diagnostics import (
+from blog_agent.services.run_diagnostics import (
     format_cli_summary,
     load_diagnostics,
 )
@@ -141,8 +141,7 @@ def test_main_reports_failure_without_wrapping_exception(
     )
 
     monkeypatch.setattr(
-        main,
-        "generate_run_id",
+        "uuid.uuid4",
         lambda: RUN_ID,
     )
 

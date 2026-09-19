@@ -9,10 +9,10 @@ from langchain_core.messages import (
 )
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-from config.settings import EVAL_JUDGE_MODEL
+from blog_agent.config.settings import EVAL_JUDGE_MODEL
 from eval.models import EvaluationResult
-from prompts.evaluator import EVALUATION_SYSTEM
-from schemas.models import Plan
+from blog_agent.prompts.evaluator import EVALUATION_SYSTEM
+from blog_agent.schemas.models import Plan
 
 judge_llm = ChatGoogleGenerativeAI(
     model=EVAL_JUDGE_MODEL,

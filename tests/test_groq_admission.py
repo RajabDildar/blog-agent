@@ -3,7 +3,7 @@ import time
 
 import pytest
 
-from services.groq_admission import (
+from blog_agent.services.groq_admission import (
     GroqAdmissionController,
     invoke_with_groq_admission,
 )

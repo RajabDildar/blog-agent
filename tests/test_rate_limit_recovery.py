@@ -11,12 +11,12 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
-from graph import main_graph
-from services.rate_limits import (
+from blog_agent.graph import main_graph
+from blog_agent.services.rate_limits import (
     RateLimitInfo,
     RateLimitRetryExhausted,
 )
-from services.run_diagnostics import (
+from blog_agent.services.run_diagnostics import (
     RunDiagnostics,
 )
 
@@ -252,7 +252,7 @@ def test_langgraph_resume_preserves_successful_pending_sibling_work(
 
     def fanout(state: RecoveryState):
         return [
-            Send("successful", {}),
+            Send("a_successful", {}),
             Send("limited", {}),
         ]
 
@@ -279,7 +279,7 @@ def test_langgraph_resume_preserves_successful_pending_sibling_work(
         lambda state: {},
     )
     builder.add_node(
-        "successful",
+        "a_successful",
         successful,
     )
     builder.add_node(
@@ -298,7 +298,7 @@ def test_langgraph_resume_preserves_successful_pending_sibling_work(
     )
 
     builder.add_edge(
-        "successful",
+        "a_successful",
         END,
     )
     builder.add_edge(

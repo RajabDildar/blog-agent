@@ -1,5 +1,5 @@
-from services import markdown_quality
-from services.markdown_quality import (
+from blog_agent.services import markdown_quality
+from blog_agent.services.markdown_quality import (
     run_markdown_quality_gate,
 )
 

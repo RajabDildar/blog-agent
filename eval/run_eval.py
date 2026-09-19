@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from importlib.metadata import version
 from pathlib import Path
 
-from config.settings import (
+from blog_agent.config.settings import (
     EVAL_BETWEEN_RUN_DELAY_SECONDS,
     EVAL_MAX_RATE_LIMIT_WAIT_SECONDS,
     EVAL_RESUME_ATTEMPT_LIMIT,
@@ -29,18 +29,18 @@ from eval.score import (
     evaluate_article,
     extract_metrics,
 )
-from graph.main_graph import (
+from blog_agent.graph.main_graph import (
     generate_run_id,
     resume,
     run,
 )
-from services.rate_limits import (
+from blog_agent.services.rate_limits import (
     RateLimitRetryExhausted,
 )
-from services.run_diagnostics import (
+from blog_agent.services.run_diagnostics import (
     load_diagnostics,
 )
-from services.citation_verification import verify_citations
+from blog_agent.services.citation_verification import verify_citations
 
 DEFAULT_TOPICS_PATH = Path(__file__).parent / "topics.json"
 

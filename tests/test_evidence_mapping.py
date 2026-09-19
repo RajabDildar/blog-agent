@@ -1,18 +1,18 @@
 import pytest
 
-from graph.main_graph import fanout
-from nodes.orchestrator import (
+from blog_agent.graph.main_graph import fanout
+from blog_agent.nodes.orchestrator import (
     EvidenceInsufficiencyError,
     orchestrator_node,
     validate_plan_contract,
 )
-from schemas.models import (
+from blog_agent.schemas.models import (
     Plan,
     ResearchEvidence,
     ResearchPack,
     Task,
 )
-from schemas.state import State
+from blog_agent.schemas.state import State
 
 
 def make_task(
@@ -494,7 +494,7 @@ def test_orchestrator_sends_quality_metadata_to_planner(monkeypatch):
         def invoke(self, messages):
             captured_messages.extend(messages)
 
-            from schemas.models import Plan
+            from blog_agent.schemas.models import Plan
 
             return Plan(
                 blog_title="Test",
@@ -512,7 +512,7 @@ def test_orchestrator_sends_quality_metadata_to_planner(monkeypatch):
             )
 
     monkeypatch.setattr(
-        "nodes.orchestrator.gemini_llm",
+        "blog_agent.nodes.orchestrator.gemini_llm",
         type(
             "FakeLLM",
             (),
@@ -689,7 +689,7 @@ def _monkeypatch_planner(
     planner,
 ) -> None:
     monkeypatch.setattr(
-        "nodes.orchestrator.gemini_llm",
+        "blog_agent.nodes.orchestrator.gemini_llm",
         type(
             "FakeLLM",
             (),
@@ -726,7 +726,7 @@ def test_orchestrator_refuses_research_run_with_no_evidence(monkeypatch) -> None
 def test_orchestrator_plans_closed_book_without_evidence(monkeypatch) -> None:
     class FakePlanner:
         def invoke(self, messages):
-            from schemas.models import Plan
+            from blog_agent.schemas.models import Plan
 
             return Plan(
                 blog_title="Test",

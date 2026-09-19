@@ -1,12 +1,12 @@
 import pytest
 
-from graph.main_graph import (
+from blog_agent.graph.main_graph import (
     citation_release_gate_failure_node,
     route_after_article_validation,
     route_after_citation_verifier,
     route_after_editor,
 )
-from schemas.models import EditorialIssue, EditorialReview, Plan, Task
+from blog_agent.schemas.models import EditorialIssue, EditorialReview, Plan, Task
 
 
 def make_task(task_id: int) -> Task:

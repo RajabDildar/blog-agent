@@ -1,4 +1,4 @@
-from services.section_validation import (
+from blog_agent.services.section_validation import (
     validate_section_markdown,
 )
 

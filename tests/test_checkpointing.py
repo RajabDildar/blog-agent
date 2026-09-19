@@ -3,8 +3,8 @@ import sqlite3
 import pytest
 from langgraph.checkpoint.sqlite import SqliteSaver
 
-from graph.main_graph import build_graph
-from services.checkpointer import (
+from blog_agent.graph.main_graph import build_graph
+from blog_agent.services.checkpointer import (
     CheckpointerHandle,
     create_checkpointer,
 )

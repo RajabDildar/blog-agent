@@ -2,12 +2,12 @@ from pathlib import Path
 
 import pytest
 
-from services.run_paths import (
+from blog_agent.services.run_paths import (
     markdown_image_path,
     published_image_path,
     staged_image_path,
 )
-from services.storage import publish_blog
+from blog_agent.services.storage import publish_blog
 
 RUN_ID = "e" * 32
 TITLE = "Storage Cleanup"
@@ -64,7 +64,7 @@ def test_partial_image_publish_is_cleaned_up(
     )
 
     original_atomic_copy_file = __import__(
-        "services.storage",
+        "blog_agent.services.storage",
         fromlist=["_atomic_copy_file"],
     )._atomic_copy_file
 
@@ -80,7 +80,7 @@ def test_partial_image_publish_is_cleaned_up(
         return original_atomic_copy_file(source, destination)
 
     monkeypatch.setattr(
-        "services.storage._atomic_copy_file",
+        "blog_agent.services.storage._atomic_copy_file",
         fake_atomic_copy_file,
     )
 

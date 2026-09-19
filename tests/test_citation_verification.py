@@ -1,11 +1,11 @@
-from schemas.models import (
+from blog_agent.schemas.models import (
     Plan,
     ResearchEvidence,
     SectionOutput,
     Task,
 )
-from nodes.merger import merge_content
-from services.citation_verification import (
+from blog_agent.nodes.merger import merge_content
+from blog_agent.services.citation_verification import (
     normalize_url,
     verify_citations,
 )
@@ -271,7 +271,7 @@ def test_section_without_research_requirements_has_no_missing_citation_issue() -
 
 
 def test_low_authority_evidence_creates_quality_issue():
-    from services.citation_verification import (
+    from blog_agent.services.citation_verification import (
         verify_evidence_quality,
     )
 

@@ -1,4 +1,4 @@
-from services import llm
+from blog_agent.services import llm
 
 
 def test_groq_model_retries_are_disabled():

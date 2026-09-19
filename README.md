@@ -117,8 +117,42 @@ LangGraph checkpoints state at every super-step boundary along this path, so a f
  
 ```text
 blog-agent/
-├── config/
-│   └── settings.py
+├── blog_agent/
+│   ├── __init__.py
+│   ├── config/
+│   │   └── settings.py
+│   ├── graph/
+│   │   └── main_graph.py
+│   ├── nodes/
+│   ├── prompts/
+│   ├── schemas/
+│   │   ├── context.py
+│   │   ├── models.py
+│   │   └── state.py
+│   └── services/
+│       ├── article_structure.py
+│       ├── checkpointer.py
+│       ├── citation_verification.py
+│       ├── cloudflare.py
+│       ├── final_validation.py
+│       ├── groq_admission.py
+│       ├── image_prompt.py
+│       ├── llm.py
+│       ├── markdown.py
+│       ├── markdown_format.py
+│       ├── markdown_llm_repair.py
+│       ├── markdown_parser.py
+│       ├── markdown_quality.py
+│       ├── markdown_repair.py
+│       ├── markdown_validation.py
+│       ├── rate_limits.py
+│       ├── run_diagnostics.py
+│       ├── run_paths.py
+│       ├── section_validation.py
+│       ├── source_quality.py
+│       ├── storage.py
+│       ├── tavily.py
+│       └── time.py
 ├── eval/
 │   ├── README.md
 │   ├── models.py
@@ -127,39 +161,7 @@ blog-agent/
 │   ├── score.py
 │   └── topics.json
 ├── generated_blogs/
-├── graph/
-│   └── main_graph.py
 ├── images/
-├── nodes/
-├── prompts/
-├── schemas/
-│   ├── models.py
-│   ├── state.py
-│   └── context.py
-├── services/
-│   ├── article_structure.py
-│   ├── checkpointer.py
-│   ├── citation_verification.py
-│   ├── cloudflare.py
-│   ├── final_validation.py
-│   ├── groq_admission.py
-│   ├── image_prompt.py
-│   ├── llm.py
-│   ├── markdown.py
-│   ├── markdown_format.py
-│   ├── markdown_llm_repair.py
-│   ├── markdown_parser.py
-│   ├── markdown_quality.py
-│   ├── markdown_repair.py
-│   ├── markdown_validation.py
-│   ├── rate_limits.py
-│   ├── run_diagnostics.py
-│   ├── run_paths.py
-│   ├── section_validation.py
-│   ├── source_quality.py
-│   ├── storage.py
-│   ├── tavily.py
-│   └── time.py
 ├── tests/
 ├── .env.example
 ├── .gitignore
@@ -189,7 +191,7 @@ blog-agent/
  
 ## Models and providers
  
-Model names are configured through environment variables in `config/settings.py`.
+Model names are configured through environment variables in `blog_agent/config/settings.py`.
  
 The current workflow uses:
  

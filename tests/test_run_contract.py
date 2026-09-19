@@ -1,5 +1,5 @@
-from graph import main_graph
-from graph.main_graph import _thread_config, _thread_exists, generate_run_id
+from blog_agent.graph import main_graph
+from blog_agent.graph.main_graph import _thread_config, _thread_exists, generate_run_id
 
 
 def test_generate_run_id_is_non_empty():

@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from services.cloudflare import cloudflare_generate_image_bytes
+from blog_agent.services.cloudflare import cloudflare_generate_image_bytes
 
 
 def make_response(status_code: int, payload: dict) -> requests.Response:
@@ -28,7 +28,7 @@ def test_cloudflare_400_is_not_retried(monkeypatch):
             },
         )
 
-    monkeypatch.setattr("services.cloudflare.requests.post", fake_post)
+    monkeypatch.setattr("blog_agent.services.cloudflare.requests.post", fake_post)
 
     try:
         cloudflare_generate_image_bytes(
@@ -69,8 +69,8 @@ def test_cloudflare_429_is_retried_then_succeeds(monkeypatch):
             },
         )
 
-    monkeypatch.setattr("services.cloudflare.requests.post", fake_post)
-    monkeypatch.setattr("services.cloudflare.time.sleep", lambda _: None)
+    monkeypatch.setattr("blog_agent.services.cloudflare.requests.post", fake_post)
+    monkeypatch.setattr("blog_agent.services.cloudflare.time.sleep", lambda _: None)
 
     result = cloudflare_generate_image_bytes(
         "test prompt",
@@ -119,12 +119,12 @@ def test_cloudflare_429_respects_retry_after_header(monkeypatch):
         )
 
     monkeypatch.setattr(
-        "services.cloudflare.requests.post",
+        "blog_agent.services.cloudflare.requests.post",
         fake_post,
     )
 
     monkeypatch.setattr(
-        "services.cloudflare.time.sleep",
+        "blog_agent.services.cloudflare.time.sleep",
         lambda value: sleeps.append(value),
     )
 
@@ -158,8 +158,8 @@ def test_cloudflare_timeout_is_retried(monkeypatch):
             },
         )
 
-    monkeypatch.setattr("services.cloudflare.requests.post", fake_post)
-    monkeypatch.setattr("services.cloudflare.time.sleep", lambda _: None)
+    monkeypatch.setattr("blog_agent.services.cloudflare.requests.post", fake_post)
+    monkeypatch.setattr("blog_agent.services.cloudflare.time.sleep", lambda _: None)
 
     result = cloudflare_generate_image_bytes(
         "test prompt",
@@ -196,8 +196,8 @@ def test_cloudflare_500_is_retried(monkeypatch):
             },
         )
 
-    monkeypatch.setattr("services.cloudflare.requests.post", fake_post)
-    monkeypatch.setattr("services.cloudflare.time.sleep", lambda _: None)
+    monkeypatch.setattr("blog_agent.services.cloudflare.requests.post", fake_post)
+    monkeypatch.setattr("blog_agent.services.cloudflare.time.sleep", lambda _: None)
 
     result = cloudflare_generate_image_bytes(
         "test prompt",

@@ -2,11 +2,11 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
-from services.rate_limits import (
+from blog_agent.services.rate_limits import (
     RateLimitInfo,
     RateLimitRetryExhausted,
 )
-from services.run_diagnostics import (
+from blog_agent.services.run_diagnostics import (
     RunDiagnostics,
     instrument_node,
 )
@@ -314,7 +314,7 @@ def test_instrument_node_records_groq_rate_limit_event(
     slept = []
 
     monkeypatch.setattr(
-        "services.run_diagnostics.time.sleep",
+        "blog_agent.services.run_diagnostics.time.sleep",
         lambda seconds: slept.append(seconds),
     )
 
@@ -397,7 +397,7 @@ def test_instrument_node_stops_long_groq_rate_limit_retry(
     slept = []
 
     monkeypatch.setattr(
-        "services.run_diagnostics.time.sleep",
+        "blog_agent.services.run_diagnostics.time.sleep",
         lambda seconds: slept.append(seconds),
     )
 
@@ -458,7 +458,7 @@ def test_instrument_node_does_not_sleep_on_final_rate_limit_attempt(
     slept = []
 
     monkeypatch.setattr(
-        "services.run_diagnostics.time.sleep",
+        "blog_agent.services.run_diagnostics.time.sleep",
         lambda seconds: slept.append(seconds),
     )
 

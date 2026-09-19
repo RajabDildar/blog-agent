@@ -2,9 +2,9 @@ import pytest
 from langgraph.graph import END, START, StateGraph
 from typing_extensions import TypedDict
 
-from graph import main_graph
-from services.checkpointer import create_checkpointer
-from services.run_diagnostics import (
+from blog_agent.graph import main_graph
+from blog_agent.services.checkpointer import create_checkpointer
+from blog_agent.services.run_diagnostics import (
     RunDiagnostics,
     load_diagnostics,
 )

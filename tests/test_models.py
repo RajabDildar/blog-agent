@@ -1,4 +1,4 @@
-from schemas.models import ResearchEvidence
+from blog_agent.schemas.models import ResearchEvidence
 
 
 def test_research_evidence_supports_quality_metadata():

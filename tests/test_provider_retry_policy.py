@@ -4,7 +4,7 @@ import pytest
 from google.genai import errors as genai_errors
 from langgraph.types import RetryPolicy
 
-from config.settings import (
+from blog_agent.config.settings import (
     is_transient_provider_error,
     provider_retry_policy,
 )

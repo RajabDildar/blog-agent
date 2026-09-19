@@ -2,9 +2,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nodes.editor import build_editor_evidence_sheet, editor_node
-from schemas.models import EditorialReview, Plan, ResearchEvidence, Task
-from services.citation_verification import verify_evidence_quality
+from blog_agent.nodes.editor import build_editor_evidence_sheet, editor_node
+from blog_agent.schemas.models import EditorialReview, Plan, ResearchEvidence, Task
+from blog_agent.services.citation_verification import verify_evidence_quality
 
 
 def test_editor_evidence_sheet_is_compact():
@@ -125,7 +125,7 @@ def test_editor_node_rejects_unapproved_review_without_actionable_task_issues():
         sections_to_revise=[],
     )
 
-    with patch("nodes.editor.gemini_llm") as mock_llm:
+    with patch("blog_agent.nodes.editor.gemini_llm") as mock_llm:
         mock_llm.with_structured_output.return_value.invoke.return_value = mock_review
         with pytest.raises(
             ValueError,

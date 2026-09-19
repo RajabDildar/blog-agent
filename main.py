@@ -3,19 +3,15 @@ from datetime import UTC, datetime
 
 from dotenv import load_dotenv
 
-from services.rate_limits import RateLimitRetryExhausted
+import uuid
 
-load_dotenv()
-
-from graph.main_graph import (
-    generate_run_id,
-    resume,
-    run,
-)
-from services.run_diagnostics import (
+from blog_agent import resume, run
+from blog_agent.services.rate_limits import RateLimitRetryExhausted
+from blog_agent.services.run_diagnostics import (
     format_cli_summary,
     load_diagnostics,
 )
+
 
 
 def parse_args():
@@ -115,7 +111,7 @@ def main():
     if not topic:
         raise SystemExit("Topic cannot be empty.")
 
-    run_id = generate_run_id()
+    run_id = str(uuid.uuid4())
 
     print(f"\nRun ID: {run_id}")
 

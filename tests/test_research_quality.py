@@ -5,7 +5,7 @@ from datetime import (
 
 import pytest
 
-from nodes.research import (
+from blog_agent.nodes.research import (
     GroundingDiagnostics,
     _parse_published_at,
     assign_final_evidence_ids,
@@ -13,17 +13,17 @@ from nodes.research import (
     apply_research_quality_gate,
     ground_extracted_evidence,
 )
-from schemas.models import (
+from blog_agent.schemas.models import (
     ExtractedResearchEvidence,
     ExtractedResearchPack,
     ResearchEvidence,
 )
-from services.source_quality import (
+from blog_agent.services.source_quality import (
     classify_source,
     compute_source_ratios,
     is_official_primary_source,
 )
-from services.tavily import tavily_search
+from blog_agent.services.tavily import tavily_search
 
 NOW = datetime(
     2026,

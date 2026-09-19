@@ -2,12 +2,12 @@ from pathlib import Path
 
 import pytest
 
-from services.run_paths import (
+from blog_agent.services.run_paths import (
     markdown_image_path,
     published_image_path,
     staged_image_path,
 )
-from services.storage import publish_blog
+from blog_agent.services.storage import publish_blog
 
 RUN_ID = "c" * 32
 TITLE = "Run Isolation"
