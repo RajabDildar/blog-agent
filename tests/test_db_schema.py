@@ -121,3 +121,52 @@ def test_run_creation_and_vocabulary(db: Session):
     assert run.visibility == "private"
     assert run.featured is False
     assert run.created_at is not None
+
+
+def test_run_event_creation_and_sequence_uniqueness(db: Session):
+    from apps.api.db.models import RunEvent
+
+    run = Run(
+        original_input="Test event pipeline",
+        status=RunStatus.RUNNING.value,
+    )
+    db.add(run)
+    db.commit()
+
+    event1 = RunEvent(
+        run_id=run.id,
+        sequence=1,
+        event_type="run_queued",
+        stage=None,
+        message="Run enqueued",
+        payload={"info": "started"},
+    )
+    event2 = RunEvent(
+        run_id=run.id,
+        sequence=2,
+        event_type="node_started",
+        stage="intent_gateway",
+        message="Intent gateway started",
+        payload=None,
+    )
+    db.add_all([event1, event2])
+    db.commit()
+
+    db.refresh(run)
+    assert len(run.events) == 2
+    assert run.events[0].sequence == 1
+    assert run.events[0].event_type == "run_queued"
+    assert run.events[1].sequence == 2
+    assert run.events[1].event_type == "node_started"
+
+    # Duplicate sequence for the same run must raise IntegrityError
+    dup_event = RunEvent(
+        run_id=run.id,
+        sequence=1,
+        event_type="duplicate_event",
+    )
+    db.add(dup_event)
+    with pytest.raises(IntegrityError):
+        db.commit()
+    db.rollback()
+

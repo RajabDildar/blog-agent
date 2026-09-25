@@ -255,10 +255,21 @@ EVAL_JUDGE_MODEL = os.getenv(
     "gemini-3.1-flash-lite",
 )
 
+CHECKPOINT_BACKEND = os.getenv(
+    "CHECKPOINT_BACKEND",
+    "sqlite",
+).lower()
+
 CHECKPOINT_SQLITE_PATH = os.getenv(
     "CHECKPOINT_SQLITE_PATH",
     "runs/checkpoints.sqlite",
 )
+
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql+psycopg://postgres:postgrespassword@localhost:5432/blog_agent",
+)
+
 
 MAX_EDITORIAL_REVISIONS = 1
 MAX_ARTICLE_REPAIRS = 1

@@ -4,7 +4,7 @@ import time
 from collections import defaultdict
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 from langgraph.runtime import get_runtime
 
@@ -20,6 +20,42 @@ from blog_agent.services.rate_limits import (
 )
 
 
+@runtime_checkable
+class DiagnosticsSink(Protocol):
+    """Abstraction for diagnostics and event persistence across CLI, files, and DB."""
+
+    def record_event(self, run_id: str, event: dict[str, Any]) -> None:
+        """Record a single runtime event."""
+        ...
+
+    def record_summary(self, run_id: str, summary: dict[str, Any]) -> None:
+        """Persist or update the diagnostics summary snapshot."""
+        ...
+
+
+class FileDiagnosticsSink:
+    """Default local file diagnostics sink for CLI and tests."""
+
+    def __init__(self, run_id: str):
+        self.run_id = run_id
+
+    @property
+    def path(self) -> Path:
+        return Path("runs") / self.run_id / "diagnostics.json"
+
+    def record_event(self, run_id: str, event: dict[str, Any]) -> None:
+        # File sink writes snapshot when events occur
+        pass
+
+    def record_summary(self, run_id: str, summary: dict[str, Any]) -> None:
+        path = self.path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(summary, indent=2),
+            encoding="utf-8",
+        )
+
+
 class RunDiagnostics:
     def __init__(
         self,
@@ -27,12 +63,16 @@ class RunDiagnostics:
         run_id: str,
         topic: str = "",
         original_input: str | None = None,
+        sink: DiagnosticsSink | None = None,
     ):
         self.run_id = run_id
         self.original_input = (
             original_input if original_input is not None else topic
         )
         self.topic = topic
+        self.sink: DiagnosticsSink = (
+            sink if sink is not None else FileDiagnosticsSink(run_id)
+        )
         self.started_at = time.time()
 
         self.status = "running"
@@ -110,20 +150,7 @@ class RunDiagnostics:
         }
 
     def _write(self) -> None:
-        path = self.path
-
-        path.parent.mkdir(
-            parents=True,
-            exist_ok=True,
-        )
-
-        path.write_text(
-            json.dumps(
-                self._snapshot(),
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
+        self.sink.record_summary(self.run_id, self._snapshot())
 
     def _record_event(
         self,
@@ -131,14 +158,13 @@ class RunDiagnostics:
         event: str,
         **payload: Any,
     ) -> None:
-        self.events.append(
-            {
-                "timestamp": time.time(),
-                "event": event,
-                **payload,
-            }
-        )
-
+        event_dict = {
+            "timestamp": time.time(),
+            "event": event,
+            **payload,
+        }
+        self.events.append(event_dict)
+        self.sink.record_event(self.run_id, event_dict)
         self._write()
 
     def node_started(
@@ -431,11 +457,14 @@ class RunDiagnostics:
     def from_dict(
         cls,
         data: dict[str, Any],
+        *,
+        sink: DiagnosticsSink | None = None,
     ) -> RunDiagnostics:
         diagnostics = cls(
             run_id=data["run_id"],
             topic=data.get("topic", ""),
             original_input=data.get("original_input"),
+            sink=sink,
         )
 
         diagnostics.intent_status = data.get(

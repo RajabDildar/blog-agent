@@ -48,6 +48,7 @@ from blog_agent.services.rate_limits import (
     get_provider_retry_delay_seconds,
 )
 from blog_agent.services.run_diagnostics import (
+    DiagnosticsSink,
     RunDiagnostics,
     get_current_diagnostics,
     instrument_node,
@@ -723,9 +724,7 @@ def build_graph(
     )
 
 
-_checkpointer_handle: CheckpointerHandle = create_checkpointer(
-    CHECKPOINT_SQLITE_PATH,
-)
+_checkpointer_handle: CheckpointerHandle = create_checkpointer()
 
 app = build_graph(
     _checkpointer_handle.saver,
@@ -758,7 +757,16 @@ def run(
     user_input: str,
     *,
     run_id: str | None = None,
+    diagnostics_sink: DiagnosticsSink | None = None,
+    checkpointer_handle: CheckpointerHandle | None = None,
 ):
+    active_handle = checkpointer_handle or _checkpointer_handle
+    active_app = (
+        build_graph(active_handle.saver)
+        if checkpointer_handle is not None
+        else app
+    )
+
     if run_id is None:
         run_id = generate_run_id()
 
@@ -772,6 +780,7 @@ def run(
         run_id=run_id,
         original_input=user_input,
         topic="",
+        sink=diagnostics_sink,
     )
 
     context = {
@@ -779,7 +788,7 @@ def run(
     }
 
     try:
-        result = app.invoke(
+        result = active_app.invoke(
             {
                 "run_id": run_id,
                 "original_input": user_input,
@@ -833,7 +842,7 @@ def run(
         diagnostics.finish_failure(exc)
         raise
 
-    current_state = app.get_state(_thread_config(run_id))
+    current_state = active_app.get_state(_thread_config(run_id))
     current_tasks = getattr(current_state, "tasks", None)
     if current_tasks and getattr(current_tasks[0], "interrupts", None):
         return result
@@ -850,20 +859,29 @@ def resume(
     run_id: str,
     *,
     human_response: IntentHumanResponse | None = None,
+    diagnostics_sink: DiagnosticsSink | None = None,
+    checkpointer_handle: CheckpointerHandle | None = None,
 ):
+    active_handle = checkpointer_handle or _checkpointer_handle
+    active_app = (
+        build_graph(active_handle.saver)
+        if checkpointer_handle is not None
+        else app
+    )
+
     config = {
         **_thread_config(run_id),
         "recursion_limit": 50,
     }
 
-    checkpoint = _checkpointer_handle.saver.get_tuple(
+    checkpoint = active_handle.saver.get_tuple(
         _thread_config(run_id),
     )
 
     if checkpoint is None:
         raise ValueError(f"Unknown run ID: {run_id}")
 
-    state = app.get_state(
+    state = active_app.get_state(
         _thread_config(run_id),
     )
 
@@ -901,6 +919,7 @@ def resume(
     if diagnostics_data:
         diagnostics = RunDiagnostics.from_dict(
             diagnostics_data,
+            sink=diagnostics_sink,
         )
     else:
         topic = state.values.get(
@@ -916,6 +935,7 @@ def resume(
             run_id=run_id,
             topic=topic,
             original_input=original_input,
+            sink=diagnostics_sink,
         )
 
     if diagnostics.status == "paused_rate_limit":
@@ -934,7 +954,7 @@ def resume(
     }
 
     try:
-        result = app.invoke(
+        result = active_app.invoke(
             invoke_arg,
             config,
             context=context,
@@ -955,7 +975,7 @@ def resume(
         )
         raise
 
-    current_state = app.get_state(_thread_config(run_id))
+    current_state = active_app.get_state(_thread_config(run_id))
     current_tasks = getattr(current_state, "tasks", None)
     if current_tasks and getattr(current_tasks[0], "interrupts", None):
         return result

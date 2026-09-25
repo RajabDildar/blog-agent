@@ -22,6 +22,15 @@ class Settings(BaseSettings):
     ALLOWED_ORIGINS: Union[str, List[str]] = ["http://localhost:5173", "http://localhost:3000"]
     ENVIRONMENT: str = "development"
 
+    # Phase 4: Queue, Checkpointing, Quotas & Abuse Prevention
+    REDIS_URL: str = "redis://localhost:6379/0"
+    CHECKPOINT_BACKEND: str = "postgres"
+    AUTHENTICATED_DAILY_RUN_LIMIT: int = 5
+    ANONYMOUS_DAILY_IP_LIMIT: int = 5
+    INTENT_REQUESTS_PER_IP_PER_HOUR: int = 20
+    ANONYMOUS_RETENTION_HOURS: int = 48
+
+
     SESSION_COOKIE_NAME: str = "blog_session"
     CSRF_COOKIE_NAME: str = "blog_csrf"
     ANONYMOUS_COOKIE_NAME: str = "blog_anon"

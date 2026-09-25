@@ -10,6 +10,10 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     JSON,
+    BigInteger,
+    Integer,
+    UniqueConstraint,
+    Index,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -135,3 +139,35 @@ class Run(Base):
 
     # Relationship
     user: Mapped[Optional["User"]] = relationship("User", back_populates="runs")
+    events: Mapped[List["RunEvent"]] = relationship(
+        "RunEvent", back_populates="run", cascade="all, delete-orphan", order_by="RunEvent.sequence"
+    )
+
+
+class RunEvent(Base):
+    """
+    Durable event store for cross-process live progress and SSE streaming.
+    Preserves monotonically ordered events for each run.
+    """
+    __tablename__ = "run_events"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    stage: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    payload: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("run_id", "sequence", name="uq_run_events_run_id_sequence"),
+        Index("ix_run_events_run_sequence", "run_id", "sequence"),
+    )
+
+    run: Mapped["Run"] = relationship("Run", back_populates="events")
+

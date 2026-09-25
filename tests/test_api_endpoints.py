@@ -15,6 +15,12 @@ from apps.api.auth.csrf import generate_csrf_token
 
 settings = get_settings()
 
+@pytest.fixture(autouse=True)
+def bypass_abuse_limit():
+    with patch("apps.api.routers.runs.check_and_increment_abuse_limit"):
+        yield
+
+
 @pytest.fixture(scope="module")
 def client():
     return TestClient(app, base_url="http://localhost:8000")
@@ -240,13 +246,26 @@ def test_visibility_and_feature_endpoints(client, db):
     assert any(a["id"] == run_id for a in featured_res.json())
 
 
-def test_phase_4_placeholders(client):
+def test_phase_4_endpoints_not_found_on_unknown_run(client):
     run_id = str(uuid.uuid4())
-    res_input = client.post(f"/runs/{run_id}/input")
-    assert res_input.status_code == 501
+    csrf_token = "test-csrf-token-12345"
+    client.cookies.set("blog_csrf", csrf_token)
+    headers = {
+        "origin": "http://localhost:5173",
+        "x-csrf-token": csrf_token,
+    }
 
-    res_resume = client.post(f"/runs/{run_id}/resume")
-    assert res_resume.status_code == 501
+    res_input = client.post(
+        f"/runs/{run_id}/input",
+        json={"action": "select_option", "value": "Option 1"},
+        headers=headers,
+    )
+    assert res_input.status_code == 404
+
+    res_resume = client.post(f"/runs/{run_id}/resume", headers=headers)
+    assert res_resume.status_code == 404
 
     res_events = client.get(f"/runs/{run_id}/events")
-    assert res_events.status_code == 501
+    assert res_events.status_code == 404
+
+

@@ -17,5 +17,18 @@ services:
       timeout: 3s
       retries: 5
 
+  redis:
+    image: redis:alpine3.22
+    container_name: blog_agent_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+
 volumes:
   postgres_data:
+

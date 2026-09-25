@@ -82,3 +82,17 @@ class GalleryItemResponse(BaseModel):
     featured: bool
     completed_at: Optional[datetime] = None
     article_url: Optional[str] = None
+
+
+class HumanInputRequest(BaseModel):
+    """User response to clarification or confirmation interrupt."""
+    action: str = Field(
+        ...,
+        description="Action type: select_option | custom_input | proceed | cancel",
+    )
+    value: Optional[str] = Field(
+        None,
+        max_length=1000,
+        description="Selected option value or custom input string",
+    )
+

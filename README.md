@@ -139,30 +139,38 @@ LangGraph checkpoints state at every super-step boundary along this path, so a f
 ```text
 blog-agent/
 ├── apps/
-│   └── api/                       # Phase 3: FastAPI backend application
+│   └── api/                       # FastAPI backend application & RQ worker
 │       ├── __init__.py
 │       ├── main.py                # FastAPI app factory and router registration
 │       ├── config.py              # Pydantic BaseSettings (env / .env)
 │       ├── dependencies.py        # FastAPI dependencies: DB, auth, CSRF, anon
+│       ├── queue.py               # Redis & RQ queue connection management
 │       ├── auth/
 │       │   ├── google.py          # Google Identity Services ID token verification
 │       │   ├── sessions.py        # Opaque session tokens with SHA-256 DB storage
 │       │   └── csrf.py            # Double-submit-cookie CSRF + Origin validation
 │       ├── db/
 │       │   ├── base.py            # SQLAlchemy DeclarativeBase
-│       │   ├── models.py          # User, Session, Run ORM models + enums
+│       │   ├── models.py          # User, Session, Run, RunEvent ORM models + enums
 │       │   ├── session.py         # Pooled engine and get_db generator
 │       │   └── migrations/        # Alembic (application tables only)
+│       ├── maintenance/
+│       │   └── cleanup_expired_runs.py  # Expired anonymous run cleanup task
 │       ├── routers/
 │       │   ├── auth.py            # POST /auth/google, POST /auth/logout, GET /auth/me
-│       │   ├── runs.py            # POST /runs, GET /runs, GET/PATCH /runs/{id}/...
+│       │   ├── runs.py            # POST /runs, GET /runs, POST /runs/{id}/input, SSE /events, ...
 │       │   └── gallery.py         # GET /gallery, GET /featured
 │       ├── schemas/
 │       │   ├── auth.py            # GoogleAuthRequest, UserResponse
 │       │   └── runs.py            # RunCreateRequest, RunResponse, GalleryItemResponse, …
-│       └── services/
-│           ├── run_service.py     # Run CRUD with strict ownership / invariant enforcement
-│           └── claim_service.py   # Anonymous run transfer on Google login
+│       ├── services/
+│       │   ├── run_service.py     # Run CRUD with strict ownership / invariant enforcement
+│       │   ├── claim_service.py   # Anonymous run transfer on Google login
+│       │   ├── quota_service.py   # Quota accounting & IP abuse limits
+│       │   └── diagnostics_sink.py# PostgreSQL diagnostic event streaming sink
+│       └── workers/
+│           ├── jobs.py            # Async RQ worker jobs (start_run_job, resume_run_job)
+│           └── worker.py          # RQ worker entry point
 ├── blog_agent/
 │   ├── __init__.py                # public API: run(), resume()
 │   ├── config/
@@ -590,9 +598,12 @@ The tests cover the main reliability boundaries, including:
 - CSRF double-submit-cookie validation and Origin checking
 - Run service ownership, visibility, and featured invariants
 - Anonymous run claiming on Google login
-- Authorization: private run isolation, admin-only feature operations
+- RQ background job queueing and async execution
+- HITL API input submission and resume endpoint handlers
+- Pre-generation quota enforcement (authenticated daily limit, anonymous session limit, IP rate limiting)
+- Durable application event store (`run_events`) and real-time SSE streaming with `Last-Event-ID` support
 
-**437 tests pass** across 53 test modules as of Phase 3.
+**486 tests pass** across 57 test modules as of Phase 4.
 
 ## Development principles
 
