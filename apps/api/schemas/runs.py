@@ -21,7 +21,8 @@ class RunResponse(BaseModel):
 
     id: str
     user_id: Optional[str] = None
-    anonymous_session_id: Optional[str] = None
+    # anonymous_session_id is intentionally excluded: it is an internal tracking
+    # identifier that must not be exposed to API clients.
     original_input: str
     topic: Optional[str] = None
     status: str
