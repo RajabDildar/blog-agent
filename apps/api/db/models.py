@@ -132,6 +132,8 @@ class Run(Base):
     )
     diagnostics_summary: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
     article_object_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    article_markdown: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    article_assets: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
     article_title: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     article_excerpt: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     error_code: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)

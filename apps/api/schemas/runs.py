@@ -38,11 +38,29 @@ class RunResponse(BaseModel):
     resume_after: Optional[datetime] = None
     diagnostics_summary: Optional[Any] = None
     article_object_key: Optional[str] = None
+    article_markdown: Optional[str] = None
+    article_assets: Optional[Any] = None
     article_title: Optional[str] = None
     article_excerpt: Optional[str] = None
     error_code: Optional[str] = None
     error_message: Optional[str] = None
     run_url: Optional[str] = None
+
+
+class ArticleResponse(BaseModel):
+    """Detailed response for a completed technical article."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    article_title: Optional[str] = None
+    article_excerpt: Optional[str] = None
+    article_markdown: Optional[str] = None
+    topic: Optional[str] = None
+    completed_at: Optional[datetime] = None
+    visibility: str
+    featured: bool
+    article_assets: Optional[Any] = None
+    article_url: Optional[str] = None
 
 
 class RunListItemResponse(BaseModel):

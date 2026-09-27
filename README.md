@@ -163,6 +163,7 @@ blog-agent/
 │       ├── routers/
 │       │   ├── auth.py            # POST /auth/google, POST /auth/logout, GET /auth/me
 │       │   ├── runs.py            # POST /runs, GET /runs, POST /runs/{id}/input, SSE /events, ...
+│       │   ├── articles.py        # GET /articles/{id}, GET /articles/{id}/assets/{filename}
 │       │   └── gallery.py         # GET /gallery, GET /featured
 │       ├── schemas/
 │       │   ├── auth.py            # GoogleAuthRequest, UserResponse
@@ -606,8 +607,13 @@ The tests cover the main reliability boundaries, including:
 - HITL API input submission and resume endpoint handlers
 - Pre-generation quota enforcement (authenticated daily limit, anonymous session limit, PostgreSQL HMAC IP rate limiting)
 - Durable application event store (`run_events`) and real-time SSE streaming with `Last-Event-ID` support
+- PostgreSQL durable article storage (`runs.article_markdown`, `runs.article_title`, `runs.article_excerpt`, `runs.article_assets`)
+- Cloudinary authenticated image storage, signed URL generation, and automatic rollback on failure
+- Article and image asset delivery endpoints (`GET /articles/{id}`, `GET /articles/{id}/assets/{filename}`) with strict owner/public authorization
+- Gallery and featured article querying with stable pagination and admin featuring rules
+- Anonymous expired run artifact cleanup (PostgreSQL Markdown/assets clearing and Cloudinary asset deletion)
 
-**487 tests pass** across 57 test modules as of Phase 4.
+**506 tests pass** across 62 test modules as of Phase 5.
 
 ## Development principles
 

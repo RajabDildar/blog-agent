@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from apps.api.config import get_settings
-from apps.api.routers import auth, runs, gallery
+from apps.api.routers import auth, runs, gallery, articles
 
 settings = get_settings()
 
@@ -34,6 +34,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router)
     app.include_router(runs.router)
     app.include_router(gallery.router)
+    app.include_router(articles.router)
 
     # Mount Inngest background execution endpoint
     import inngest.fast_api

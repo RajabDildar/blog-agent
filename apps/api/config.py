@@ -30,7 +30,10 @@ class Settings(BaseSettings):
     AUTHENTICATED_DAILY_RUN_LIMIT: int = 5
     ANONYMOUS_DAILY_IP_LIMIT: int = 5
     INTENT_REQUESTS_PER_IP_PER_HOUR: int = 20
-    ANONYMOUS_RETENTION_HOURS: int = 48
+    # Phase 5: Cloudinary Image Storage
+    CLOUDINARY_CLOUD_NAME: Optional[str] = None
+    CLOUDINARY_API_KEY: Optional[str] = None
+    CLOUDINARY_API_SECRET: Optional[str] = None
 
 
     SESSION_COOKIE_NAME: str = "blog_session"

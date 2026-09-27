@@ -201,7 +201,7 @@ def get_gallery(
             Run.visibility == RunVisibility.PUBLIC.value,
             Run.status == RunStatus.COMPLETED.value,
         )
-        .order_by(desc(Run.completed_at), desc(Run.created_at))
+        .order_by(desc(Run.completed_at), desc(Run.id))
         .limit(limit)
         .offset(offset)
     )
@@ -210,7 +210,7 @@ def get_gallery(
 
 def get_featured(
     db: Session,
-    limit: int = 50,
+    limit: int = 6,
     offset: int = 0,
 ) -> List[Run]:
     """Retrieves all featured, public, completed articles."""
@@ -221,7 +221,7 @@ def get_featured(
             Run.visibility == RunVisibility.PUBLIC.value,
             Run.status == RunStatus.COMPLETED.value,
         )
-        .order_by(desc(Run.completed_at), desc(Run.created_at))
+        .order_by(desc(Run.completed_at), desc(Run.id))
         .limit(limit)
         .offset(offset)
     )

@@ -16,35 +16,48 @@ settings = get_settings()
 
 
 def cleanup_expired_runs(retention_hours: int | None = None) -> int:
-    """Marks anonymous runs older than retention_hours as EXPIRED and purges expired rate limit buckets."""
+    """Marks anonymous runs older than retention_hours as EXPIRED, clears article content, deletes Cloudinary assets, and purges rate limit buckets."""
     hours = retention_hours or settings.ANONYMOUS_RETENTION_HOURS
     now = datetime.now(timezone.utc)
     cutoff = now - timedelta(hours=hours)
 
     with WorkerSessionLocal() as session:
-        # Find active or terminal anonymous runs created before cutoff that are not already expired
-        stmt = (
-            update(Run)
-            .where(
+        # Select expired anonymous runs to gather asset public_ids
+        expired_runs = session.scalars(
+            select(Run).where(
                 Run.user_id.is_(None),
                 Run.anonymous_session_id.isnot(None),
                 Run.created_at < cutoff,
                 Run.status != RunStatus.EXPIRED.value,
             )
-            .values(
-                status=RunStatus.EXPIRED.value,
-                expires_at=now,
-            )
-        )
-        result = session.execute(stmt)
+        ).all()
 
-        # Also purge expired rate limit buckets
+        cloudinary_pids: list[str] = []
+        for run in expired_runs:
+            assets = run.article_assets or []
+            for asset in assets:
+                if isinstance(asset, dict) and asset.get("public_id") and not asset["public_id"].startswith("local:"):
+                    cloudinary_pids.append(asset["public_id"])
+            run.status = RunStatus.EXPIRED.value
+            run.expires_at = now
+            run.article_markdown = None
+            run.article_assets = None
+
+        # Purge expired rate limit buckets
         session.execute(
             delete(RateLimitBucket).where(RateLimitBucket.expires_at < now)
         )
 
         session.commit()
-        count = result.rowcount
+        count = len(expired_runs)
+
+        if cloudinary_pids:
+            try:
+                from blog_agent.services.cloudinary_storage import delete_cloudinary_assets
+                delete_cloudinary_assets(cloudinary_pids)
+            except Exception as exc:
+                logger.warning(f"Failed to delete Cloudinary assets for expired runs: {exc}")
+
         logger.info(f"Marked {count} anonymous runs older than {hours} hours as expired, purged expired rate limit buckets.")
         return count
 

@@ -249,6 +249,9 @@ def test_langgraph_resume_preserves_successful_pending_sibling_work(
     }
 
     info = _rate_limit_info()
+    import threading
+
+    successful_done = threading.Event()
 
     def fanout(state: RecoveryState):
         return [
@@ -258,14 +261,18 @@ def test_langgraph_resume_preserves_successful_pending_sibling_work(
 
     def successful(state: RecoveryState):
         attempts["successful"] += 1
-        return {
+        res = {
             "events": ["successful"],
         }
+        successful_done.set()
+        return res
 
     def limited(state: RecoveryState):
         attempts["limited"] += 1
 
         if attempts["limited"] == 1:
+            successful_done.wait(timeout=5.0)
+            time.sleep(0.05)
             raise RateLimitRetryExhausted(info)
 
         return {
