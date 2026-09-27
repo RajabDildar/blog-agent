@@ -1,7 +1,7 @@
 """FastAPI application settings and environment configuration."""
 import os
 from functools import lru_cache
-from typing import List, Union
+from typing import List, Union, Optional
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -22,8 +22,10 @@ class Settings(BaseSettings):
     ALLOWED_ORIGINS: Union[str, List[str]] = ["http://localhost:5173", "http://localhost:3000"]
     ENVIRONMENT: str = "development"
 
-    # Phase 4: Queue, Checkpointing, Quotas & Abuse Prevention
-    REDIS_URL: str = "redis://localhost:6379/0"
+    # Phase 4: Inngest Orchestration, Checkpointing, Quotas & Abuse Prevention
+    INNGEST_APP_ID: str = "blog-agent"
+    INNGEST_EVENT_KEY: Optional[str] = None
+    INNGEST_SIGNING_KEY: Optional[str] = None
     CHECKPOINT_BACKEND: str = "postgres"
     AUTHENTICATED_DAILY_RUN_LIMIT: int = 5
     ANONYMOUS_DAILY_IP_LIMIT: int = 5

@@ -85,7 +85,7 @@ def test_submit_clarification_select_option_valid(db, client):
     client.cookies.set("blog_anon", anon_id)
     headers = _csrf_headers(client)
 
-    with patch("apps.api.routers.runs.get_queue", return_value=MagicMock()):
+    with patch("apps.api.routers.runs.send_inngest_event", return_value=["mock-event-id"]):
         res = client.post(
             f"/runs/{run.id}/input",
             json={"action": "select_option", "value": "Machine learning"},
@@ -104,7 +104,7 @@ def test_submit_clarification_custom_input(db, client):
     client.cookies.set("blog_anon", anon_id)
     headers = _csrf_headers(client)
 
-    with patch("apps.api.routers.runs.get_queue", return_value=MagicMock()):
+    with patch("apps.api.routers.runs.send_inngest_event", return_value=["mock-event-id"]):
         res = client.post(
             f"/runs/{run.id}/input",
             json={"action": "custom_input", "value": "AI applications in precision medicine"},
@@ -121,7 +121,7 @@ def test_submit_clarification_wrong_option_rejected(db, client):
     client.cookies.set("blog_anon", anon_id)
     headers = _csrf_headers(client)
 
-    with patch("apps.api.routers.runs.get_queue", return_value=MagicMock()):
+    with patch("apps.api.routers.runs.send_inngest_event", return_value=["mock-event-id"]):
         res = client.post(
             f"/runs/{run.id}/input",
             json={"action": "select_option", "value": "Quantum computing"},  # Not an offered option
@@ -138,7 +138,7 @@ def test_submit_clarification_invalid_action_rejected(db, client):
     client.cookies.set("blog_anon", anon_id)
     headers = _csrf_headers(client)
 
-    with patch("apps.api.routers.runs.get_queue", return_value=MagicMock()):
+    with patch("apps.api.routers.runs.send_inngest_event", return_value=["mock-event-id"]):
         res = client.post(
             f"/runs/{run.id}/input",
             json={"action": "proceed"},  # Wrong for clarification
@@ -154,7 +154,7 @@ def test_submit_clarification_duplicate_rejected(db, client):
     client.cookies.set("blog_anon", anon_id)
     headers = _csrf_headers(client)
 
-    with patch("apps.api.routers.runs.get_queue", return_value=MagicMock()):
+    with patch("apps.api.routers.runs.send_inngest_event", return_value=["mock-event-id"]):
         # First submission clears pending_interaction
         first = client.post(
             f"/runs/{run.id}/input",
@@ -181,7 +181,7 @@ def test_submit_confirmation_proceed(db, client):
     client.cookies.set("blog_anon", anon_id)
     headers = _csrf_headers(client)
 
-    with patch("apps.api.routers.runs.get_queue", return_value=MagicMock()):
+    with patch("apps.api.routers.runs.send_inngest_event", return_value=["mock-event-id"]):
         res = client.post(
             f"/runs/{run.id}/input",
             json={"action": "proceed"},
@@ -198,7 +198,7 @@ def test_submit_confirmation_cancel(db, client):
     client.cookies.set("blog_anon", anon_id)
     headers = _csrf_headers(client)
 
-    with patch("apps.api.routers.runs.get_queue", return_value=MagicMock()):
+    with patch("apps.api.routers.runs.send_inngest_event", return_value=["mock-event-id"]):
         res = client.post(
             f"/runs/{run.id}/input",
             json={"action": "cancel"},
@@ -260,7 +260,7 @@ def test_resume_paused_run_after_timer_succeeds(db, client):
     client.cookies.set("blog_anon", anon_id)
     headers = _csrf_headers(client)
 
-    with patch("apps.api.routers.runs.get_queue", return_value=MagicMock()):
+    with patch("apps.api.routers.runs.send_inngest_event", return_value=["mock-event-id"]):
         res = client.post(f"/runs/{run.id}/resume", headers=headers)
 
     assert res.status_code == 200
@@ -296,7 +296,7 @@ def test_resume_failed_run_succeeds(db, client):
     client.cookies.set("blog_anon", anon_id)
     headers = _csrf_headers(client)
 
-    with patch("apps.api.routers.runs.get_queue", return_value=MagicMock()):
+    with patch("apps.api.routers.runs.send_inngest_event", return_value=["mock-event-id"]):
         res = client.post(f"/runs/{run.id}/resume", headers=headers)
 
     assert res.status_code == 200

@@ -17,7 +17,7 @@ from apps.api.dependencies import (
     verify_csrf,
 )
 from apps.api.db.models import User, Run, RunEvent, RunStatus
-from apps.api.queue import get_queue
+from apps.api.inngest import send_inngest_event
 from apps.api.schemas.runs import (
     RunCreateRequest,
     RunResponse,
@@ -69,7 +69,7 @@ def create_new_run(
 ):
     """
     Submits a new technical article request.
-    Creates a durable queued run in PostgreSQL and enqueues an RQ job without running generation in-process.
+    Creates a durable queued run in PostgreSQL and dispatches a blog-agent/run.start Inngest event without running generation in-process.
     """
     user_id = current_user.id if current_user else None
     anon_id = None if user_id else get_anonymous_id(request, response)
@@ -77,7 +77,7 @@ def create_new_run(
 
     # Abuse rate limit check (IP requests per hour)
     try:
-        check_and_increment_abuse_limit(client_ip)
+        check_and_increment_abuse_limit(client_ip, db=db)
     except QuotaExceededError as e:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(e))
 
@@ -114,13 +114,8 @@ def create_new_run(
     db.add(initial_event)
     db.commit()
 
-    # Enqueue to background worker
-    try:
-        queue = get_queue("default")
-        queue.enqueue("apps.api.workers.jobs.start_run", run.id)
-    except Exception:
-        # Non-blocking for testing environments where Redis queue may be stubbed
-        pass
+    # Dispatch Inngest event
+    send_inngest_event("blog-agent/run.start", {"run_id": run.id})
 
     return _format_run_response(run)
 
@@ -239,14 +234,14 @@ def submit_human_input(
 ):
     """
     Submits user response to clarification or confirmation interrupt.
-    Atomically clears interaction to prevent duplicate resume and enqueues resume job.
+    Atomically clears interaction to prevent duplicate resume and dispatches a blog-agent/run.resume Inngest event.
     """
     user_id = current_user.id if current_user else None
     anon_id = request.cookies.get(settings.ANONYMOUS_COOKIE_NAME) if not user_id else None
     client_ip = request.client.host if request.client else None
 
     try:
-        check_and_increment_abuse_limit(client_ip)
+        check_and_increment_abuse_limit(client_ip, db=db)
     except QuotaExceededError as e:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(e))
 
@@ -310,12 +305,8 @@ def submit_human_input(
     run.pending_interaction = None
     db.commit()
 
-    # Enqueue resume
-    try:
-        queue = get_queue("default")
-        queue.enqueue("apps.api.workers.jobs.resume_run", run_id, human_response_payload)
-    except Exception:
-        pass
+    # Dispatch Inngest resume event
+    send_inngest_event("blog-agent/run.resume", {"run_id": run_id, "human_response": human_response_payload})
 
     return _format_run_response(run)
 
@@ -363,11 +354,8 @@ def resume_paused_run(
     run.status = RunStatus.QUEUED.value
     db.commit()
 
-    try:
-        queue = get_queue("default")
-        queue.enqueue("apps.api.workers.jobs.resume_run", run_id, None)
-    except Exception:
-        pass
+    # Dispatch Inngest resume event
+    send_inngest_event("blog-agent/run.resume", {"run_id": run_id, "human_response": None})
 
     return _format_run_response(run)
 

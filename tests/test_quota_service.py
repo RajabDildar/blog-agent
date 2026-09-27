@@ -1,15 +1,14 @@
-"""Phase 4 tests: Quota service - monthly generation limits and abuse protection."""
+"""Phase 4 tests: Quota service - daily generation limits and abuse protection using PostgreSQL."""
 from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone, timedelta
-from unittest.mock import patch, MagicMock
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
 from apps.api.config import get_settings
-from apps.api.db.models import Run, RunStatus, User
+from apps.api.db.models import Run, RunStatus, User, RateLimitBucket
 
 settings = get_settings()
 
@@ -42,57 +41,73 @@ def test_quota_service_imports_without_error():
         check_and_increment_abuse_limit,
         check_pre_generation_quota,
         reserve_generation_quota_atomic,
+        hash_identifier,
         QuotaExceededError,
     )
 
 
 # ---------------------------------------------------------------------------
-# check_and_increment_abuse_limit tests
+# check_and_increment_abuse_limit tests (PostgreSQL-backed)
 # ---------------------------------------------------------------------------
 
-def test_abuse_limit_allows_first_request():
-    """check_and_increment_abuse_limit must silently pass for a fresh IP."""
-    from apps.api.services.quota_service import check_and_increment_abuse_limit
+def test_abuse_limit_allows_first_request(db):
+    """check_and_increment_abuse_limit must create a bucket row and pass for a fresh IP."""
+    from apps.api.services.quota_service import check_and_increment_abuse_limit, hash_identifier
 
-    fake_redis = MagicMock()
-    fake_redis.incr.return_value = 1
-    # Should not raise
-    check_and_increment_abuse_limit(client_ip="1.2.3.4", redis_conn=fake_redis)
-    fake_redis.incr.assert_called_once()
+    test_ip = f"10.0.{uuid.uuid4().int % 250}.{uuid.uuid4().int % 250}"
+    check_and_increment_abuse_limit(client_ip=test_ip, db=db)
+
+    now = datetime.now(timezone.utc)
+    window_hour = now.strftime("%Y%m%d%H")
+    expected_key = hash_identifier(f"abuse:ip_intent_hour:{test_ip}:{window_hour}")
+
+    bucket = db.scalar(select(RateLimitBucket).where(RateLimitBucket.bucket_key == expected_key))
+    assert bucket is not None
+    assert bucket.count == 1
 
 
-def test_abuse_limit_raises_when_limit_exceeded():
+def test_abuse_limit_raises_when_limit_exceeded(db):
     """check_and_increment_abuse_limit must raise QuotaExceededError when counter exceeds limit."""
-    from apps.api.services.quota_service import check_and_increment_abuse_limit, QuotaExceededError
+    from apps.api.services.quota_service import check_and_increment_abuse_limit, hash_identifier, QuotaExceededError
 
-    fake_redis = MagicMock()
-    # Simulate counter already at limit + 1
-    fake_redis.incr.return_value = settings.INTENT_REQUESTS_PER_IP_PER_HOUR + 1
+    test_ip = f"10.1.{uuid.uuid4().int % 250}.{uuid.uuid4().int % 250}"
+    now = datetime.now(timezone.utc)
+    window_hour = now.strftime("%Y%m%d%H")
+    expected_key = hash_identifier(f"abuse:ip_intent_hour:{test_ip}:{window_hour}")
+
+    # Seed bucket at the limit
+    seed_bucket = RateLimitBucket(
+        bucket_key=expected_key,
+        count=settings.INTENT_REQUESTS_PER_IP_PER_HOUR,
+        expires_at=now + timedelta(hours=1),
+    )
+    db.add(seed_bucket)
+    db.commit()
 
     with pytest.raises(QuotaExceededError):
-        check_and_increment_abuse_limit(client_ip="9.9.9.9", redis_conn=fake_redis)
+        check_and_increment_abuse_limit(client_ip=test_ip, db=db)
 
 
-def test_abuse_limit_skips_when_ip_is_none():
+def test_abuse_limit_skips_when_ip_is_none(db):
     """check_and_increment_abuse_limit must silently skip when no IP is available."""
     from apps.api.services.quota_service import check_and_increment_abuse_limit
 
-    fake_redis = MagicMock()
-    # Should not raise, should not touch Redis
-    check_and_increment_abuse_limit(client_ip=None, redis_conn=fake_redis)
-    fake_redis.incr.assert_not_called()
+    # Should not raise, should not insert anything
+    initial_count = db.scalar(select(RateLimitBucket.id))
+    check_and_increment_abuse_limit(client_ip=None, db=db)
 
 
-def test_abuse_limit_tolerates_redis_error():
-    """check_and_increment_abuse_limit must NOT raise when Redis is unavailable."""
-    import redis as redis_lib
+def test_abuse_limit_hashes_ip_and_stores_no_raw_ip(db):
+    """Bucket keys must be HMAC-SHA256 digests and must not contain the raw IP string."""
     from apps.api.services.quota_service import check_and_increment_abuse_limit
 
-    fake_redis = MagicMock()
-    fake_redis.incr.side_effect = redis_lib.RedisError("connection refused")
+    raw_ip = "192.168.100.200"
+    check_and_increment_abuse_limit(client_ip=raw_ip, db=db)
 
-    # Must not propagate Redis error
-    check_and_increment_abuse_limit(client_ip="5.5.5.5", redis_conn=fake_redis)
+    # Check that raw IP does not appear anywhere in bucket keys
+    buckets = db.scalars(select(RateLimitBucket)).all()
+    for b in buckets:
+        assert raw_ip not in b.bucket_key
 
 
 # ---------------------------------------------------------------------------
@@ -100,14 +115,14 @@ def test_abuse_limit_tolerates_redis_error():
 # ---------------------------------------------------------------------------
 
 def _make_completed_runs_for_quota(db, *, count: int, anon_id: str | None = None, user_id: str | None = None):
-    """Helper: insert runs with generation_started_at this month."""
+    """Helper: insert runs with generation_started_at today."""
     now = datetime.now(timezone.utc)
-    start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    today = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
     for _ in range(count):
         run = Run(
             original_input="Quota test",
             status=RunStatus.COMPLETED.value,
-            generation_started_at=start_of_month + timedelta(minutes=1),
+            generation_started_at=today + timedelta(minutes=1),
             anonymous_session_id=anon_id,
             user_id=user_id,
         )
@@ -119,8 +134,6 @@ def test_pre_generation_quota_allows_anonymous_with_no_prior_runs(db):
     """Anonymous user with no prior runs must pass quota check."""
     from apps.api.services.quota_service import check_pre_generation_quota
 
-    fake_redis = MagicMock()
-    fake_redis.get.return_value = b"0"
     anon_id = "fresh-anon-" + uuid.uuid4().hex[:8]
 
     # Should not raise
@@ -128,7 +141,6 @@ def test_pre_generation_quota_allows_anonymous_with_no_prior_runs(db):
         db=db,
         anonymous_session_id=anon_id,
         client_ip="1.1.1.1",
-        redis_conn=fake_redis,
     )
 
 
@@ -139,15 +151,11 @@ def test_pre_generation_quota_blocks_anonymous_after_first_run(db):
     anon_id = "one-run-anon-" + uuid.uuid4().hex[:8]
     _make_completed_runs_for_quota(db, count=1, anon_id=anon_id)
 
-    fake_redis = MagicMock()
-    fake_redis.get.return_value = b"0"
-
     with pytest.raises(QuotaExceededError):
         check_pre_generation_quota(
             db=db,
             anonymous_session_id=anon_id,
             client_ip="1.1.1.1",
-            redis_conn=fake_redis,
         )
 
 
@@ -167,15 +175,11 @@ def test_pre_generation_quota_uses_generation_started_at_not_created_at(db):
         db.add(run)
     db.commit()
 
-    fake_redis = MagicMock()
-    fake_redis.get.return_value = b"0"
-
     # Should NOT raise - none of these runs consumed quota
     check_pre_generation_quota(
         db=db,
         anonymous_session_id=anon_id,
         client_ip="1.1.1.1",
-        redis_conn=fake_redis,
     )
 
 

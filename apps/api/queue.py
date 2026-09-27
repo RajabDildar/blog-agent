@@ -1,21 +1,15 @@
-"""Redis connection and RQ queue management for background generation execution."""
+"""Event queue interface delegating to Inngest orchestration."""
 from __future__ import annotations
 
-from functools import lru_cache
-import redis
-from rq import Queue
-
-from apps.api.config import get_settings
-
-settings = get_settings()
+from typing import Any
+from apps.api.inngest import send_inngest_event
 
 
-@lru_cache(maxsize=1)
-def get_redis_connection() -> redis.Redis:
-    """Returns a pooled, persistent Redis client connection."""
-    return redis.Redis.from_url(settings.REDIS_URL)
+def enqueue_run_start(run_id: str) -> list[str]:
+    """Emits blog-agent/run.start event."""
+    return send_inngest_event("blog-agent/run.start", {"run_id": run_id})
 
 
-def get_queue(name: str = "default") -> Queue:
-    """Returns an RQ Queue instance bound to the shared Redis connection."""
-    return Queue(name, connection=get_redis_connection())
+def enqueue_run_resume(run_id: str, human_response: Any = None) -> list[str]:
+    """Emits blog-agent/run.resume event."""
+    return send_inngest_event("blog-agent/run.resume", {"run_id": run_id, "human_response": human_response})

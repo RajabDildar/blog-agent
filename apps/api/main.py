@@ -35,6 +35,17 @@ def create_app() -> FastAPI:
     app.include_router(runs.router)
     app.include_router(gallery.router)
 
+    # Mount Inngest background execution endpoint
+    import inngest.fast_api
+    from apps.api.inngest import inngest_client, inngest_functions
+
+    inngest.fast_api.serve(
+        app,
+        inngest_client,
+        inngest_functions,
+        serve_path="/api/inngest",
+    )
+
     @app.get("/healthz", tags=["health"])
     def health_check():
         """Basic health check endpoint."""

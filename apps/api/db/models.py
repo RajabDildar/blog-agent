@@ -171,3 +171,19 @@ class RunEvent(Base):
 
     run: Mapped["Run"] = relationship("Run", back_populates="events")
 
+
+class RateLimitBucket(Base):
+    """
+    PostgreSQL-backed rolling / bucketed rate limiter.
+    Stores HMAC-SHA256 hashed keys (no raw IPs stored as product data).
+    """
+    __tablename__ = "rate_limit_buckets"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    bucket_key: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+

@@ -1,15 +1,16 @@
 """Quota and abuse enforcement for authenticated and anonymous generation requests."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import hashlib
+import hmac
+from datetime import datetime, timezone, timedelta
 from typing import Optional
-import redis
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 from sqlalchemy.orm import Session
 
 from apps.api.config import get_settings
-from apps.api.db.models import Run, RunStatus
-from apps.api.queue import get_redis_connection
+from apps.api.db.models import Run, RunStatus, RateLimitBucket
+from apps.api.services.diagnostics_sink import WorkerSessionLocal
 
 settings = get_settings()
 
@@ -25,31 +26,57 @@ def get_current_utc_day_start() -> datetime:
     return datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
 
 
+def hash_identifier(raw_value: str, salt: Optional[str] = None) -> str:
+    """Produces a secure HMAC-SHA256 hex digest so raw IPs are never stored."""
+    secret = (salt or settings.SESSION_SECRET_KEY).encode("utf-8")
+    return hmac.new(secret, raw_value.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
 def check_and_increment_abuse_limit(
     client_ip: Optional[str],
-    redis_conn: Optional[redis.Redis] = None,
+    db: Optional[Session] = None,
 ) -> None:
     """
-    Enforces INTENT_REQUESTS_PER_IP_PER_HOUR counter in Redis.
-    Limits rapid provider abuse on run creation and HITL input submission.
+    Enforces INTENT_REQUESTS_PER_IP_PER_HOUR counter in PostgreSQL rate_limit_buckets.
+    Limits rapid provider abuse on run creation and HITL input submission without Redis.
     """
     if not client_ip:
         return
 
-    r = redis_conn or get_redis_connection()
-    key = f"abuse:ip_intent_hour:{client_ip}"
-    try:
-        current = r.incr(key)
-        if current == 1:
-            r.expire(key, 3600)
+    now = datetime.now(timezone.utc)
+    window_hour = now.strftime("%Y%m%d%H")
+    bucket_key = hash_identifier(f"abuse:ip_intent_hour:{client_ip}:{window_hour}")
+    expires_at = now + timedelta(hours=1)
+
+    def _execute(session: Session) -> None:
+        bucket = session.scalar(
+            select(RateLimitBucket)
+            .where(RateLimitBucket.bucket_key == bucket_key)
+            .with_for_update()
+        )
+        if bucket:
+            bucket.count += 1
+            current = bucket.count
+        else:
+            new_bucket = RateLimitBucket(
+                bucket_key=bucket_key,
+                count=1,
+                expires_at=expires_at,
+            )
+            session.add(new_bucket)
+            current = 1
+        session.commit()
 
         if current > settings.INTENT_REQUESTS_PER_IP_PER_HOUR:
             raise QuotaExceededError(
                 f"Rate limit exceeded: maximum {settings.INTENT_REQUESTS_PER_IP_PER_HOUR} requests per hour allowed from this IP."
             )
-    except redis.RedisError:
-        # If Redis is unavailable during testing/transient, do not hard-block unless required
-        pass
+
+    if db is not None:
+        _execute(db)
+    else:
+        with WorkerSessionLocal() as session:
+            _execute(session)
 
 
 def check_pre_generation_quota(
@@ -57,7 +84,6 @@ def check_pre_generation_quota(
     user_id: Optional[str] = None,
     anonymous_session_id: Optional[str] = None,
     client_ip: Optional[str] = None,
-    redis_conn: Optional[redis.Redis] = None,
 ) -> None:
     """
     Fast pre-check at POST /runs boundary to reject requests early if quota is already exhausted.
@@ -92,25 +118,23 @@ def check_pre_generation_quota(
                 "Anonymous article generation limit reached (1 article). Please sign in to generate more articles."
             )
 
-        # IP backstop check
+        # IP backstop check in PostgreSQL
         if client_ip:
-            r = redis_conn or get_redis_connection()
-            ip_key = f"quota:anon_ip_day:{client_ip}:{utc_today.strftime('%Y%m%d')}"
-            try:
-                ip_count = int(r.get(ip_key) or 0)
-                if ip_count >= settings.ANONYMOUS_DAILY_IP_LIMIT:
-                    raise QuotaExceededError(
-                        f"Daily anonymous limit for this IP reached ({settings.ANONYMOUS_DAILY_IP_LIMIT} articles). Please sign in."
-                    )
-            except redis.RedisError:
-                pass
+            day_str = utc_today.strftime("%Y%m%d")
+            ip_bucket_key = hash_identifier(f"quota:anon_ip_day:{client_ip}:{day_str}")
+            bucket = db.scalar(
+                select(RateLimitBucket).where(RateLimitBucket.bucket_key == ip_bucket_key)
+            )
+            if bucket and bucket.count >= settings.ANONYMOUS_DAILY_IP_LIMIT:
+                raise QuotaExceededError(
+                    f"Daily anonymous limit for this IP reached ({settings.ANONYMOUS_DAILY_IP_LIMIT} articles). Please sign in."
+                )
 
 
 def reserve_generation_quota_atomic(
     db: Session,
     run_id: str,
     client_ip: Optional[str] = None,
-    redis_conn: Optional[redis.Redis] = None,
 ) -> bool:
     """
     Transactionally enforces quota reservation when topic is finalized before article generation.
@@ -164,20 +188,31 @@ def reserve_generation_quota_atomic(
             return False
 
         if client_ip:
-            r = redis_conn or get_redis_connection()
-            ip_key = f"quota:anon_ip_day:{client_ip}:{utc_today.strftime('%Y%m%d')}"
-            try:
-                ip_count = r.incr(ip_key)
-                if ip_count == 1:
-                    r.expire(ip_key, 86400)
-                if ip_count > settings.ANONYMOUS_DAILY_IP_LIMIT:
-                    run.status = RunStatus.FAILED.value
-                    run.error_code = "quota_exceeded"
-                    run.error_message = f"Daily anonymous limit reached for this IP ({settings.ANONYMOUS_DAILY_IP_LIMIT})."
-                    db.commit()
-                    return False
-            except redis.RedisError:
-                pass
+            day_str = utc_today.strftime("%Y%m%d")
+            ip_bucket_key = hash_identifier(f"quota:anon_ip_day:{client_ip}:{day_str}")
+            bucket = db.scalar(
+                select(RateLimitBucket)
+                .where(RateLimitBucket.bucket_key == ip_bucket_key)
+                .with_for_update()
+            )
+            if bucket:
+                bucket.count += 1
+                current_ip_count = bucket.count
+            else:
+                new_bucket = RateLimitBucket(
+                    bucket_key=ip_bucket_key,
+                    count=1,
+                    expires_at=utc_today + timedelta(days=1),
+                )
+                db.add(new_bucket)
+                current_ip_count = 1
+
+            if current_ip_count > settings.ANONYMOUS_DAILY_IP_LIMIT:
+                run.status = RunStatus.FAILED.value
+                run.error_code = "quota_exceeded"
+                run.error_message = f"Daily anonymous limit reached for this IP ({settings.ANONYMOUS_DAILY_IP_LIMIT})."
+                db.commit()
+                return False
 
     # Reserve slot
     run.generation_started_at = datetime.now(timezone.utc)
