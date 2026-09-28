@@ -1,6 +1,6 @@
 """Gallery router for public technical articles."""
 from typing import List, Optional
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from apps.api.dependencies import get_db
@@ -18,10 +18,10 @@ def _format_gallery_item(run) -> GalleryItemResponse:
 
 @router.get("/gallery", response_model=List[GalleryItemResponse])
 def list_gallery_articles(
-    page: Optional[int] = None,
-    page_size: Optional[int] = None,
-    limit: int = 12,
-    offset: int = 0,
+    page: Optional[int] = Query(None, ge=1),
+    page_size: Optional[int] = Query(None, ge=1, le=100),
+    limit: int = Query(12, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
 ):
     """Returns public, completed articles published to the community gallery."""
@@ -33,8 +33,8 @@ def list_gallery_articles(
 
 @router.get("/featured", response_model=List[GalleryItemResponse])
 def list_featured_articles(
-    limit: int = 6,
-    offset: int = 0,
+    limit: int = Query(6, ge=1, le=6),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
 ):
     """Returns curated featured articles from the gallery (max 6 for v3)."""

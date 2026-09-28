@@ -128,3 +128,30 @@ def test_featured_articles():
     items = res.json()
     assert len(items) == 1
     assert items[0]["id"] == "feat-1"
+
+
+def test_negative_pagination_rejected():
+    """Negative pagination inputs to /gallery and /runs must be rejected with 422."""
+    # Negative page_size
+    res1 = client.get("/gallery?page_size=-1")
+    assert res1.status_code == 422
+
+    # Negative limit
+    res2 = client.get("/gallery?limit=-1")
+    assert res2.status_code == 422
+
+    # Negative offset
+    res3 = client.get("/gallery?offset=-1")
+    assert res3.status_code == 422
+
+    # Negative page
+    res4 = client.get("/gallery?page=0")
+    assert res4.status_code == 422
+
+    # Runs negative limit
+    res5 = client.get("/runs?limit=-1")
+    assert res5.status_code == 422
+
+    # Runs negative offset
+    res6 = client.get("/runs?offset=-1")
+    assert res6.status_code == 422

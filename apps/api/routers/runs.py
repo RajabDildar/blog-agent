@@ -3,7 +3,7 @@ import asyncio
 import json
 from datetime import datetime, timezone
 from typing import List, Optional, Union
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
@@ -135,8 +135,8 @@ def create_new_run(
 @router.get("", response_model=List[RunListItemResponse])
 def get_user_runs(
     request: Request,
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
