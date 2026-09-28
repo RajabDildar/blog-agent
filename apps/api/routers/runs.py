@@ -26,6 +26,7 @@ from apps.api.schemas.runs import (
     RunFeatureUpdateRequest,
     HumanInputRequest,
 )
+from blog_agent.schemas.interaction_types import InteractionType
 from apps.api.services.diagnostics_sink import WorkerSessionLocal
 from apps.api.services.quota_service import (
     check_and_increment_abuse_limit,
@@ -267,7 +268,7 @@ def submit_human_input(
     interaction = run.pending_interaction
     itype = interaction.get("type") if isinstance(interaction, dict) else None
 
-    if itype == "needs_clarification":
+    if itype in (InteractionType.CLARIFICATION_REQUIRED.value, "needs_clarification"):
         if payload.action == "select_option":
             options = interaction.get("options", [])
             if payload.value not in options:
@@ -286,7 +287,7 @@ def submit_human_input(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Invalid action '{payload.action}' for clarification. Must be 'select_option' or 'custom_input'",
             )
-    elif itype == "proposed_topic_confirmation":
+    elif itype in (InteractionType.TOPIC_CONFIRMATION_REQUIRED.value, "proposed_topic_confirmation"):
         if payload.action not in ("proceed", "cancel"):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,

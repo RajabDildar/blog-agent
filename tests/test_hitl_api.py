@@ -333,3 +333,55 @@ def test_resume_wrong_owner_forbidden(db, client):
     res = client.post(f"/runs/{run.id}/resume", headers=headers)
 
     assert res.status_code == 403
+
+
+def test_hitl_real_payload_types(db, client):
+    """Verifies submit_human_input accepts real LangGraph interaction payload types clarification_required and topic_confirmation_required."""
+    anon_id = "anon-hitl-real-" + uuid.uuid4().hex[:8]
+
+    # Test clarification_required
+    run1 = Run(
+        original_input="Vague topic",
+        status=RunStatus.AWAITING_INPUT.value,
+        anonymous_session_id=anon_id,
+        pending_interaction={
+            "type": "clarification_required",
+            "question": "Which area?",
+            "options": ["Option A", "Option B"],
+        },
+    )
+    db.add(run1)
+    db.commit()
+
+    client.cookies.set("blog_anon", anon_id)
+    headers = _csrf_headers(client)
+
+    with patch("apps.api.routers.runs.send_inngest_event", return_value=["event-1"]):
+        res1 = client.post(
+            f"/runs/{run1.id}/input",
+            json={"action": "select_option", "value": "Option A"},
+            headers=headers,
+        )
+    assert res1.status_code == 200
+
+    # Test topic_confirmation_required
+    run2 = Run(
+        original_input="Broad topic",
+        status=RunStatus.AWAITING_INPUT.value,
+        anonymous_session_id=anon_id,
+        pending_interaction={
+            "type": "topic_confirmation_required",
+            "proposed_topic": "Proposed Broad Topic",
+        },
+    )
+    db.add(run2)
+    db.commit()
+
+    with patch("apps.api.routers.runs.send_inngest_event", return_value=["event-2"]):
+        res2 = client.post(
+            f"/runs/{run2.id}/input",
+            json={"action": "proceed", "value": None},
+            headers=headers,
+        )
+    assert res2.status_code == 200
+

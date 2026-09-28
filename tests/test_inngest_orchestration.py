@@ -290,7 +290,7 @@ def test_start_run_maps_interrupt_to_awaiting_input(db):
     run_id = run.id
 
     interrupt_payload = {
-        "type": "needs_clarification",
+        "type": "clarification_required",
         "question": "What aspect of cloud computing?",
         "options": ["Serverless", "Kubernetes", "Cost optimization"],
     }

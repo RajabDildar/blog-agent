@@ -3,6 +3,7 @@ import logging
 from langgraph.types import interrupt
 
 from blog_agent.config.settings import MAX_USER_INPUT_CHARS
+from blog_agent.schemas.interaction_types import InteractionType
 from blog_agent.schemas.models import IntentHumanResponse
 from blog_agent.schemas.state import State
 from blog_agent.services.intent_analysis import (
@@ -128,7 +129,7 @@ def intent_gateway_node(state: State) -> dict:
         )
 
     clarification_payload = {
-        "type": "clarification_required",
+        "type": InteractionType.CLARIFICATION_REQUIRED.value,
         "question": analysis.clarification_question,
         "options": analysis.clarification_options,
         "allow_custom_input": True,
@@ -263,7 +264,7 @@ def intent_gateway_node(state: State) -> dict:
         diagnostics.record_topic_confirmation_required(proposed_topic=proposed)
 
     confirm_payload = {
-        "type": "topic_confirmation_required",
+        "type": InteractionType.TOPIC_CONFIRMATION_REQUIRED.value,
         "proposed_topic": proposed,
         "message": "Your request is still broad. I can generate the following article topic.",
         "actions": ["proceed", "cancel"],
