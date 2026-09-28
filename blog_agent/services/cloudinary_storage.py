@@ -1,4 +1,5 @@
 """Cloudinary image storage service for portfolio-scale durable image management."""
+import logging
 import os
 from pathlib import Path
 from typing import Dict, Any, List, Optional
@@ -6,7 +7,14 @@ import cloudinary
 import cloudinary.uploader
 import cloudinary.utils
 
-from apps.api.config import get_settings
+from blog_agent.config.settings import (
+    CLOUDINARY_CLOUD_NAME,
+    CLOUDINARY_API_KEY,
+    CLOUDINARY_API_SECRET,
+)
+from blog_agent.services.protocols import ImageStorage
+
+logger = logging.getLogger("blog_agent.cloudinary_storage")
 
 
 def is_cloudinary_configured() -> bool:
@@ -14,10 +22,9 @@ def is_cloudinary_configured() -> bool:
     if os.environ.get("PYTEST_CURRENT_TEST") and not os.environ.get("FORCE_TEST_CLOUDINARY"):
         return False
 
-    settings = get_settings()
-    cname = settings.CLOUDINARY_CLOUD_NAME or ""
-    ckey = settings.CLOUDINARY_API_KEY or ""
-    csecret = settings.CLOUDINARY_API_SECRET or ""
+    cname = os.environ.get("CLOUDINARY_CLOUD_NAME", CLOUDINARY_CLOUD_NAME) or ""
+    ckey = os.environ.get("CLOUDINARY_API_KEY", CLOUDINARY_API_KEY) or ""
+    csecret = os.environ.get("CLOUDINARY_API_SECRET", CLOUDINARY_API_SECRET) or ""
     if (
         cname and ckey and csecret
         and not cname.startswith("your_")
@@ -33,12 +40,14 @@ def is_cloudinary_configured() -> bool:
 
 def _configure_cloudinary() -> None:
     """Initializes Cloudinary SDK configuration from settings or environment."""
-    settings = get_settings()
-    if settings.CLOUDINARY_CLOUD_NAME and settings.CLOUDINARY_API_KEY and settings.CLOUDINARY_API_SECRET:
+    cname = os.environ.get("CLOUDINARY_CLOUD_NAME", CLOUDINARY_CLOUD_NAME)
+    ckey = os.environ.get("CLOUDINARY_API_KEY", CLOUDINARY_API_KEY)
+    csecret = os.environ.get("CLOUDINARY_API_SECRET", CLOUDINARY_API_SECRET)
+    if cname and ckey and csecret:
         cloudinary.config(
-            cloud_name=settings.CLOUDINARY_CLOUD_NAME,
-            api_key=settings.CLOUDINARY_API_KEY,
-            api_secret=settings.CLOUDINARY_API_SECRET,
+            cloud_name=cname,
+            api_key=ckey,
+            api_secret=csecret,
             secure=True,
         )
 
@@ -57,9 +66,11 @@ def upload_run_image(
     run_id: str,
     filename: str,
     image_bytes: bytes,
+    alt_text: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Uploads an image binary to Cloudinary Free using deterministic public ID.
+    Verifies that the uploaded asset is non-empty.
     Returns metadata dict for inclusion in article_assets JSON manifest.
     """
     if not image_bytes:
@@ -79,6 +90,9 @@ def upload_run_image(
     except Exception as exc:
         raise RuntimeError(f"Cloudinary upload failed for public_id {public_id}: {exc}") from exc
 
+    if not res or not res.get("public_id"):
+        raise RuntimeError(f"Cloudinary upload verification failed for {public_id}: response missing public_id")
+
     return {
         "filename": filename,
         "public_id": res.get("public_id", public_id),
@@ -87,6 +101,7 @@ def upload_run_image(
         "width": res.get("width"),
         "height": res.get("height"),
         "bytes": res.get("bytes", len(image_bytes)),
+        "alt_text": alt_text,
     }
 
 
@@ -114,6 +129,30 @@ def delete_cloudinary_assets(public_ids: List[str]) -> None:
     for pid in public_ids:
         try:
             cloudinary.uploader.destroy(pid, type="authenticated", resource_type="image")
-        except Exception:
-            # Best-effort deletion
-            pass
+        except Exception as exc:
+            logger.warning(f"Failed to delete Cloudinary asset '{pid}': {exc}")
+
+
+class CloudinaryImageStorage:
+    """ImageStorage protocol implementation backed by Cloudinary."""
+
+    def upload_image(
+        self,
+        *,
+        run_id: str,
+        filename: str,
+        image_bytes: bytes,
+        alt_text: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        return upload_run_image(
+            run_id=run_id,
+            filename=filename,
+            image_bytes=image_bytes,
+            alt_text=alt_text,
+        )
+
+    def verify_image(self, asset: Dict[str, Any]) -> bool:
+        return bool(asset.get("public_id") and asset.get("bytes", 0) > 0)
+
+    def delete_images(self, public_ids: List[str]) -> None:
+        delete_cloudinary_assets(public_ids)

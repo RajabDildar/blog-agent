@@ -270,8 +270,13 @@ DATABASE_URL = os.getenv(
     "postgresql+psycopg://postgres:postgrespassword@localhost:5432/blog_agent",
 )
 
+CLOUDINARY_CLOUD_NAME = os.getenv("CLOUDINARY_CLOUD_NAME", "")
+CLOUDINARY_API_KEY = os.getenv("CLOUDINARY_API_KEY", "")
+CLOUDINARY_API_SECRET = os.getenv("CLOUDINARY_API_SECRET", "")
+
 
 MAX_EDITORIAL_REVISIONS = 1
 MAX_ARTICLE_REPAIRS = 1
 
 EVAL_JUDGE_IMAGE_INPUT = True
+

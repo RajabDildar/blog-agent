@@ -23,6 +23,18 @@ def save_node(
     if not markdown:
         raise RuntimeError("Refusing to save empty Markdown.")
 
+    context = {}
+    try:
+        from langgraph.runtime import get_runtime
+        runtime = get_runtime()
+        if runtime and runtime.context:
+            context = runtime.context
+    except Exception:
+        pass
+
+    article_repo = context.get("article_repository")
+    image_storage = context.get("image_storage")
+
     path = publish_blog(
         title=plan.blog_title,
         markdown=markdown,
@@ -31,6 +43,8 @@ def save_node(
             "image_results",
             [],
         ),
+        article_repo=article_repo,
+        image_storage=image_storage,
     )
 
     return {

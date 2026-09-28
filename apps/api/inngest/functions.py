@@ -13,9 +13,11 @@ from apps.api.inngest.client import inngest_client
 from apps.api.maintenance.cleanup_expired_runs import cleanup_expired_runs
 from apps.api.services.diagnostics_sink import PostgresDiagnosticsSink, WorkerSessionLocal
 from apps.api.services.quota_service import reserve_generation_quota_atomic
+from apps.api.services.article_repository import PostgresArticleRepository
 from blog_agent import run as agent_run, resume as agent_resume
 from blog_agent.schemas.models import IntentHumanResponse
 from blog_agent.services.checkpointer import create_checkpointer
+from blog_agent.services.cloudinary_storage import CloudinaryImageStorage, is_cloudinary_configured
 from blog_agent.services.rate_limits import RateLimitRetryExhausted
 
 logger = logging.getLogger("blog_agent.inngest_functions")
@@ -57,11 +59,14 @@ def execute_start_run(run_id: str) -> dict[str, Any]:
     handle = create_checkpointer(backend=settings.CHECKPOINT_BACKEND)
 
     try:
+        img_storage = CloudinaryImageStorage() if is_cloudinary_configured() else None
         result = agent_run(
             original_input,
             run_id=run_id,
             diagnostics_sink=sink,
             checkpointer_handle=handle,
+            article_repository=PostgresArticleRepository(),
+            image_storage=img_storage,
         )
         _handle_run_outcome(run_id, result, handle)
         return {"status": "completed", "run_id": run_id}
@@ -95,11 +100,14 @@ def execute_resume_run(run_id: str, human_response: Optional[dict[str, Any]] = N
         parsed_response = IntentHumanResponse.model_validate(human_response)
 
     try:
+        img_storage = CloudinaryImageStorage() if is_cloudinary_configured() else None
         result = agent_resume(
             run_id=run_id,
             human_response=parsed_response,
             diagnostics_sink=sink,
             checkpointer_handle=handle,
+            article_repository=PostgresArticleRepository(),
+            image_storage=img_storage,
         )
         _handle_run_outcome(run_id, result, handle)
         return {"status": "completed", "run_id": run_id}
@@ -174,8 +182,6 @@ def _handle_run_outcome(run_id: str, result: dict[str, Any], handle) -> None:
         # Graph ran to completion
         run.status = RunStatus.COMPLETED.value
         run.completed_at = datetime.now(timezone.utc)
-        if result.get("saved_path"):
-            run.article_object_key = result["saved_path"]
         session.commit()
 
 

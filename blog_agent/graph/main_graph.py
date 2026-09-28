@@ -39,6 +39,7 @@ from blog_agent.nodes.validator import validator_node
 from blog_agent.nodes.worker import worker_node
 from blog_agent.schemas.context import RunContext
 from blog_agent.schemas.state import State
+from blog_agent.services.protocols import ArticleRepository, ImageStorage
 from blog_agent.services.checkpointer import (
     CheckpointerHandle,
     create_checkpointer,
@@ -759,6 +760,8 @@ def run(
     run_id: str | None = None,
     diagnostics_sink: DiagnosticsSink | None = None,
     checkpointer_handle: CheckpointerHandle | None = None,
+    article_repository: ArticleRepository | None = None,
+    image_storage: ImageStorage | None = None,
 ):
     active_handle = checkpointer_handle or _checkpointer_handle
     active_app = (
@@ -785,6 +788,8 @@ def run(
 
     context = {
         "diagnostics": diagnostics,
+        "article_repository": article_repository,
+        "image_storage": image_storage,
     }
 
     try:
@@ -861,6 +866,8 @@ def resume(
     human_response: IntentHumanResponse | None = None,
     diagnostics_sink: DiagnosticsSink | None = None,
     checkpointer_handle: CheckpointerHandle | None = None,
+    article_repository: ArticleRepository | None = None,
+    image_storage: ImageStorage | None = None,
 ):
     active_handle = checkpointer_handle or _checkpointer_handle
     active_app = (
@@ -951,6 +958,8 @@ def resume(
 
     context = {
         "diagnostics": diagnostics,
+        "article_repository": article_repository,
+        "image_storage": image_storage,
     }
 
     try:

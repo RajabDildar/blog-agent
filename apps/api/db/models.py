@@ -131,7 +131,7 @@ class Run(Base):
         DateTime(timezone=True), nullable=True
     )
     diagnostics_summary: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
-    article_object_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    client_ip_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
     article_markdown: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     article_assets: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
     article_title: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

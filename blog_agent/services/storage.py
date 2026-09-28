@@ -1,7 +1,8 @@
 """Article and image artifact storage service supporting PostgreSQL and Cloudinary."""
+import json
+import logging
 import os
 import shutil
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Any, List, Dict
 from uuid import uuid4
@@ -12,10 +13,13 @@ from blog_agent.services.cloudinary_storage import (
     delete_cloudinary_assets,
 )
 from blog_agent.services.markdown import safe_blog_filename
+from blog_agent.services.protocols import ArticleRepository, ImageStorage
 from blog_agent.services.run_paths import (
     published_images_dir,
     run_images_dir,
 )
+
+logger = logging.getLogger("blog_agent.storage")
 
 
 def extract_article_excerpt(markdown: str, max_chars: int = 250) -> str:
@@ -78,8 +82,18 @@ def convert_markdown_asset_routes(
         markdown_path_str = result.get("markdown_path", "")
         if markdown_path_str and markdown_path_str in final_markdown:
             final_markdown = final_markdown.replace(markdown_path_str, asset_route)
-        else:
+        elif f"images/{filename}" in final_markdown:
+            final_markdown = final_markdown.replace(f"images/{filename}", asset_route)
+        elif f"/images/{filename}" in final_markdown:
+            final_markdown = final_markdown.replace(f"/images/{filename}", asset_route)
+        elif f"../images/{filename}" in final_markdown:
+            final_markdown = final_markdown.replace(f"../images/{filename}", asset_route)
+        elif filename in final_markdown:
             final_markdown = final_markdown.replace(filename, asset_route)
+        else:
+            raise ValueError(
+                f"Could not find markdown image reference for '{filename}' in final markdown"
+            )
     return final_markdown
 
 
@@ -113,6 +127,8 @@ def publish_blog(
     markdown: str,
     run_id: str,
     image_results: list[dict],
+    article_repo: Optional[ArticleRepository] = None,
+    image_storage: Optional[ImageStorage] = None,
     db_session: Optional[Any] = None,
 ) -> Path:
     """
@@ -164,9 +180,9 @@ def publish_blog(
 
         prepared_images.append((result, source, destination))
 
-    # Build asset manifest & upload images if Cloudinary is configured
+    # Build asset manifest & upload images if image_storage or Cloudinary is configured
     asset_manifest: List[Dict[str, Any]] = []
-    uploaded_cloudinary_pids: List[str] = []
+    uploaded_pids: List[str] = []
     published_local_files: List[Path] = []
 
     # Transform markdown image references to application asset route for database persistence
@@ -178,14 +194,27 @@ def publish_blog(
         for result, source, destination in prepared_images:
             filename = result["filename"]
             image_bytes = source.read_bytes()
+            alt_text = result.get("alt_text") or result.get("alt")
 
-            if use_cloudinary:
+            if image_storage is not None:
+                upload_res = image_storage.upload_image(
+                    run_id=run_id,
+                    filename=filename,
+                    image_bytes=image_bytes,
+                    alt_text=alt_text,
+                )
+                if not image_storage.verify_image(upload_res):
+                    raise RuntimeError(f"Image storage verification failed for {filename}")
+                uploaded_pids.append(upload_res["public_id"])
+                asset_manifest.append(upload_res)
+            elif use_cloudinary:
                 upload_res = upload_run_image(
                     run_id=run_id,
                     filename=filename,
                     image_bytes=image_bytes,
+                    alt_text=alt_text,
                 )
-                uploaded_cloudinary_pids.append(upload_res["public_id"])
+                uploaded_pids.append(upload_res["public_id"])
                 asset_manifest.append(upload_res)
             else:
                 asset_manifest.append({
@@ -193,6 +222,7 @@ def publish_blog(
                     "public_id": f"local:{run_id}:{filename}",
                     "format": Path(filename).suffix.lstrip("."),
                     "bytes": len(image_bytes),
+                    "alt_text": alt_text,
                 })
 
             # Also maintain local file copy for local CLI/testing
@@ -205,42 +235,45 @@ def publish_blog(
         blog_path = Path("generated_blogs") / safe_blog_filename(title)
         _atomic_write_text(blog_path, markdown)
 
-        # Persist to PostgreSQL if DB session is supplied or available
-        session_to_use = db_session
-        close_session = False
+        excerpt = extract_article_excerpt(final_markdown)
 
-        if session_to_use is None:
-            try:
-                from apps.api.services.diagnostics_sink import WorkerSessionLocal
-                session_to_use = WorkerSessionLocal()
-                close_session = True
-            except Exception:
-                session_to_use = None
-
-        if session_to_use is not None:
-            try:
-                from apps.api.db.models import Run, RunStatus
-                from sqlalchemy import select
-
-                run = session_to_use.scalar(select(Run).where(Run.id == run_id).with_for_update())
-                if run:
-                    run.article_title = title
-                    run.article_markdown = final_markdown
-                    run.article_excerpt = extract_article_excerpt(final_markdown)
-                    run.article_assets = asset_manifest
-                    run.status = RunStatus.COMPLETED.value
-                    run.completed_at = datetime.now(timezone.utc)
-                    session_to_use.commit()
-            finally:
-                if close_session and session_to_use:
-                    session_to_use.close()
+        # Persist through injected article_repo
+        if article_repo is not None:
+            article_repo.save_article(
+                run_id=run_id,
+                title=title,
+                markdown=final_markdown,
+                excerpt=excerpt,
+                assets=asset_manifest,
+            )
+        elif db_session is not None:
+            # Backward-compatibility fallback for tests passing raw db_session
+            from sqlalchemy import text
+            db_session.execute(
+                text(
+                    "UPDATE runs SET article_title = :title, article_markdown = :markdown, "
+                    "article_excerpt = :excerpt, article_assets = :assets, "
+                    "status = 'completed', completed_at = NOW() "
+                    "WHERE id = :run_id"
+                ),
+                {
+                    "title": title,
+                    "markdown": final_markdown,
+                    "excerpt": excerpt,
+                    "assets": json.dumps(asset_manifest),
+                    "run_id": run_id,
+                },
+            )
+            db_session.commit()
 
         return blog_path
 
     except Exception:
-        # Roll back partial Cloudinary uploads and local file copies on error
-        if uploaded_cloudinary_pids:
-            delete_cloudinary_assets(uploaded_cloudinary_pids)
+        # Roll back partial uploads and local file copies on error
+        if image_storage is not None and uploaded_pids:
+            image_storage.delete_images(uploaded_pids)
+        elif uploaded_pids:
+            delete_cloudinary_assets(uploaded_pids)
         for dest in reversed(published_local_files):
             dest.unlink(missing_ok=True)
         raise

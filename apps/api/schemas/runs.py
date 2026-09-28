@@ -37,13 +37,14 @@ class RunResponse(BaseModel):
     expires_at: Optional[datetime] = None
     resume_after: Optional[datetime] = None
     diagnostics_summary: Optional[Any] = None
-    article_object_key: Optional[str] = None
     article_markdown: Optional[str] = None
     article_assets: Optional[Any] = None
     article_title: Optional[str] = None
     article_excerpt: Optional[str] = None
     error_code: Optional[str] = None
     error_message: Optional[str] = None
+    can_resume: bool = False
+    safe_alternatives: Optional[List[str]] = None
     run_url: Optional[str] = None
 
 
