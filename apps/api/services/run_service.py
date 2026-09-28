@@ -1,5 +1,5 @@
 """Run and gallery service operations with strict ownership and invariant enforcement."""
-from typing import Optional, List
+from typing import Optional, List, Literal
 from sqlalchemy import select, desc
 from sqlalchemy.orm import Session
 
@@ -14,6 +14,42 @@ class RunNotFoundError(Exception):
 class RunInvariantError(ValueError):
     """Raised when an application or domain invariant is violated."""
     pass
+
+
+def authorize_run_access(
+    run: Optional[Run],
+    user_id: Optional[str] = None,
+    anonymous_session_id: Optional[str] = None,
+) -> Optional[Literal["owner", "public"]]:
+    """
+    Evaluates caller authorization for a given run:
+    - Deny by default: If run is None or an orphan (no user_id and no anonymous_session_id), returns None.
+    - Owner: Returns 'owner' if authenticated user_id matches run.user_id, or anonymous_session_id matches run.anonymous_session_id (when run.user_id is None).
+    - Public: Returns 'public' if run is public and completed.
+    - Otherwise returns None.
+    """
+    if not run:
+        return None
+
+    # Orphan run: no user_id and no anonymous_session_id -> deny by default
+    if run.user_id is None and run.anonymous_session_id is None:
+        return None
+
+    # Owner checks
+    if user_id and run.user_id == user_id:
+        return "owner"
+    if (
+        anonymous_session_id
+        and not run.user_id
+        and run.anonymous_session_id == anonymous_session_id
+    ):
+        return "owner"
+
+    # Public completed check
+    if run.visibility == RunVisibility.PUBLIC.value and run.status == RunStatus.COMPLETED.value:
+        return "public"
+
+    return None
 
 
 def create_run(
@@ -70,23 +106,14 @@ def get_run_by_id(
     if not run:
         return None
 
-    # Public completed runs are accessible to all
-    if run.visibility == RunVisibility.PUBLIC.value and run.status == RunStatus.COMPLETED.value:
+    access = authorize_run_access(
+        run,
+        user_id=user_id,
+        anonymous_session_id=anonymous_session_id,
+    )
+    if access in ("owner", "public"):
         return run
 
-    # Owner access check
-    if user_id and run.user_id == user_id:
-        return run
-
-    if (
-        anonymous_session_id
-        and not run.user_id
-        and run.anonymous_session_id == anonymous_session_id
-    ):
-        return run
-
-    # Admins inspecting a public run or their own run is handled above.
-    # Strict isolation: access denied for private runs belonging to others.
     return None
 
 
@@ -124,6 +151,7 @@ def update_run_visibility(
     """
     Updates run visibility with ownership and status invariant verification:
     - Only the run owner may update visibility.
+    - Anonymous runs cannot be made public.
     - visibility=public is legal ONLY for completed runs.
     - Changing to private clears featured=True.
     """
@@ -133,20 +161,13 @@ def update_run_visibility(
         raise RunNotFoundError(f"Run {run_id} not found")
 
     # Ownership check
-    is_owner = False
-    if user_id and run.user_id == user_id:
-        is_owner = True
-    elif (
-        anonymous_session_id
-        and not run.user_id
-        and run.anonymous_session_id == anonymous_session_id
-    ):
-        is_owner = True
-
-    if not is_owner:
+    if authorize_run_access(run, user_id=user_id, anonymous_session_id=anonymous_session_id) != "owner":
         raise PermissionError("Only the owner can modify run visibility")
 
     target_val = visibility.value if isinstance(visibility, RunVisibility) else visibility
+    if target_val == RunVisibility.PUBLIC.value and run.user_id is None:
+        raise PermissionError("Anonymous runs cannot be made public. Please sign in.")
+
     if target_val == RunVisibility.PUBLIC.value and run.status != RunStatus.COMPLETED.value:
         raise RunInvariantError("Only completed runs can be made public")
 
@@ -157,6 +178,7 @@ def update_run_visibility(
     db.commit()
     db.refresh(run)
     return run
+
 
 
 def update_run_featured(

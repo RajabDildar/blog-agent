@@ -269,3 +269,129 @@ def test_phase_4_endpoints_not_found_on_unknown_run(client):
     assert res_events.status_code == 404
 
 
+def test_public_read_does_not_expose_owner_fields(db, client):
+    """Public read of stranger's run must only return PublicRunResponse fields."""
+    user = User(
+        google_sub=f"sub-{uuid.uuid4().hex}",
+        email=f"owner_{uuid.uuid4().hex[:6]}@example.com",
+        display_name="Owner User",
+        is_admin=False,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    owner_id = user.id
+    run = Run(
+        id=str(uuid.uuid4()),
+        user_id=owner_id,
+        original_input="Secret confidential input",
+        topic="Architecture of LLMs",
+        status=RunStatus.COMPLETED.value,
+        visibility=RunVisibility.PUBLIC.value,
+        featured=False,
+        article_title="Architecture of LLMs",
+        article_excerpt="Deep dive into transformers",
+        diagnostics_summary={"latency_ms": 1200},
+        error_message="Internal warning",
+        article_assets=[{"filename": "diag.png"}],
+        completed_at=datetime.now(timezone.utc),
+    )
+    db.add(run)
+    db.commit()
+
+    # Stranger reads the public run
+    stranger_res = client.get(f"/runs/{run.id}")
+    assert stranger_res.status_code == 200
+    data = stranger_res.json()
+
+    # Public fields present
+    assert data["id"] == run.id
+    assert data["topic"] == "Architecture of LLMs"
+    assert data["article_title"] == "Architecture of LLMs"
+    assert data["article_excerpt"] == "Deep dive into transformers"
+    assert data["article_url"] == f"/articles/{run.id}"
+    assert data["status"] == "completed"
+    assert data["visibility"] == "public"
+
+    # Owner-only fields MUST NOT be exposed
+    assert "original_input" not in data
+    assert "user_id" not in data
+    assert "diagnostics_summary" not in data
+    assert "error_message" not in data
+    assert "article_assets" not in data
+    assert "run_url" not in data
+
+
+def test_anonymous_cannot_publish(db, client):
+    """Anonymous run owner cannot change visibility to public."""
+    anon_id = f"anon-{uuid.uuid4()}"
+    run = Run(
+        id=str(uuid.uuid4()),
+        anonymous_session_id=anon_id,
+        user_id=None,
+        original_input="Explain Rust borrow checker",
+        topic="Rust Borrow Checker",
+        status=RunStatus.COMPLETED.value,
+        visibility=RunVisibility.PRIVATE.value,
+        completed_at=datetime.now(timezone.utc),
+    )
+    db.add(run)
+    db.commit()
+
+    client.cookies.set(settings.ANONYMOUS_COOKIE_NAME, anon_id)
+    csrf_token = "csrf-test-token"
+    client.cookies.set(settings.CSRF_COOKIE_NAME, csrf_token)
+    headers = {
+        "origin": "http://localhost:5173",
+        "x-csrf-token": csrf_token,
+    }
+
+    res = client.patch(
+        f"/runs/{run.id}/visibility",
+        json={"visibility": "public"},
+        headers=headers,
+    )
+    assert res.status_code == 403
+    assert "Anonymous runs cannot be made public" in res.json()["detail"]
+
+
+def test_orphan_run_access_denied(db, client):
+    """Orphan runs with no user_id and no anonymous_session_id reject all access."""
+    run = Run(
+        id=str(uuid.uuid4()),
+        user_id=None,
+        anonymous_session_id=None,
+        original_input="Orphan input",
+        status=RunStatus.AWAITING_INPUT.value,
+        pending_interaction={"type": "clarification_required", "options": ["A", "B"]},
+    )
+    db.add(run)
+    db.commit()
+
+    csrf_token = "csrf-test-token"
+    client.cookies.set(settings.CSRF_COOKIE_NAME, csrf_token)
+    headers = {
+        "origin": "http://localhost:5173",
+        "x-csrf-token": csrf_token,
+    }
+
+    # Stranger or anyone attempting input
+    res_input = client.post(
+        f"/runs/{run.id}/input",
+        json={"action": "select_option", "value": "A"},
+        headers=headers,
+    )
+    assert res_input.status_code in (403, 404)
+
+    # Stranger attempting resume
+    run.status = RunStatus.FAILED.value
+    db.commit()
+    res_resume = client.post(f"/runs/{run.id}/resume", headers=headers)
+    assert res_resume.status_code in (403, 404)
+
+    # Stranger attempting SSE
+    res_events = client.get(f"/runs/{run.id}/events")
+    assert res_events.status_code in (403, 404)
+
+

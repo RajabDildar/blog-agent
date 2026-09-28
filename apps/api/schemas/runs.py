@@ -48,6 +48,20 @@ class RunResponse(BaseModel):
     run_url: Optional[str] = None
 
 
+class PublicRunResponse(BaseModel):
+    """Public-safe summary of a completed run for non-owners."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    status: str
+    topic: Optional[str] = None
+    article_title: Optional[str] = None
+    article_excerpt: Optional[str] = None
+    article_url: Optional[str] = None
+    visibility: str
+    completed_at: Optional[datetime] = None
+
+
 class ArticleResponse(BaseModel):
     """Detailed response for a completed technical article."""
     model_config = ConfigDict(from_attributes=True)

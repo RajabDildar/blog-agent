@@ -2,7 +2,7 @@
 import asyncio
 import json
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import List, Optional, Union
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select, update
@@ -21,6 +21,7 @@ from apps.api.inngest import send_inngest_event
 from apps.api.schemas.runs import (
     RunCreateRequest,
     RunResponse,
+    PublicRunResponse,
     RunListItemResponse,
     RunVisibilityUpdateRequest,
     RunFeatureUpdateRequest,
@@ -37,6 +38,7 @@ from apps.api.services.quota_service import (
 from apps.api.services.run_service import (
     create_run,
     get_run_by_id,
+    authorize_run_access,
     list_runs,
     update_run_visibility,
     update_run_featured,
@@ -51,6 +53,12 @@ settings = get_settings()
 def _format_run_response(run: Run) -> RunResponse:
     res = RunResponse.model_validate(run)
     res.run_url = f"/runs/{run.id}"
+    return res
+
+
+def _format_public_run_response(run: Run) -> PublicRunResponse:
+    res = PublicRunResponse.model_validate(run)
+    res.article_url = f"/articles/{run.id}"
     return res
 
 
@@ -140,7 +148,7 @@ def get_user_runs(
     return [_format_list_item(r) for r in runs]
 
 
-@router.get("/{run_id}", response_model=RunResponse)
+@router.get("/{run_id}", response_model=Union[RunResponse, PublicRunResponse])
 def get_run(
     run_id: str,
     request: Request,
@@ -150,21 +158,28 @@ def get_run(
     """Fetches a run by ID if the caller is authorized."""
     user_id = current_user.id if current_user else None
     anon_id = request.cookies.get(settings.ANONYMOUS_COOKIE_NAME) if not user_id else None
-    is_admin = current_user.is_admin if current_user else False
 
-    run = get_run_by_id(
-        db,
-        run_id=run_id,
-        user_id=user_id,
-        anonymous_session_id=anon_id,
-        is_admin=is_admin,
-    )
+    run = db.scalar(select(Run).where(Run.id == run_id))
     if not run:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Run '{run_id}' not found",
         )
-    return _format_run_response(run)
+
+    access = authorize_run_access(
+        run,
+        user_id=user_id,
+        anonymous_session_id=anon_id,
+    )
+    if access == "owner":
+        return _format_run_response(run)
+    elif access == "public":
+        return _format_public_run_response(run)
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Run '{run_id}' not found",
+        )
 
 
 @router.patch("/{run_id}/visibility", response_model=RunResponse)
@@ -254,12 +269,8 @@ def submit_human_input(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Run '{run_id}' not found")
 
     # Caller authorization
-    if run.user_id:
-        if not user_id or user_id != run.user_id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    elif run.anonymous_session_id:
-        if anon_id != run.anonymous_session_id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    if authorize_run_access(run, user_id=user_id, anonymous_session_id=anon_id) != "owner":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     # Status & pending interaction check
     if run.status != RunStatus.AWAITING_INPUT.value or not run.pending_interaction:
@@ -334,12 +345,8 @@ def resume_paused_run(
     if not run:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Run '{run_id}' not found")
 
-    if run.user_id:
-        if not user_id or user_id != run.user_id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    elif run.anonymous_session_id:
-        if anon_id != run.anonymous_session_id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    if authorize_run_access(run, user_id=user_id, anonymous_session_id=anon_id) != "owner":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     if run.status not in (RunStatus.PAUSED.value, RunStatus.FAILED.value):
         raise HTTPException(
@@ -378,23 +385,12 @@ async def stream_run_events(
     user_id = current_user.id if current_user else None
     anon_id = request.cookies.get(settings.ANONYMOUS_COOKIE_NAME) if not user_id else None
 
-    run = get_run_by_id(
-        db,
-        run_id=run_id,
-        user_id=user_id,
-        anonymous_session_id=anon_id,
-        is_admin=current_user.is_admin if current_user else False,
-    )
+    run = db.scalar(select(Run).where(Run.id == run_id))
     if not run:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Run '{run_id}' not found")
 
-    # Private run owner-only access check
-    if run.user_id:
-        if not user_id or user_id != run.user_id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    elif run.anonymous_session_id:
-        if anon_id != run.anonymous_session_id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    if authorize_run_access(run, user_id=user_id, anonymous_session_id=anon_id) != "owner":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Run '{run_id}' not found")
 
     last_event_id_header = request.headers.get("Last-Event-ID")
     initial_last_seq = 0
