@@ -92,7 +92,7 @@ def test_submit_clarification_select_option_valid(db, client):
             headers=headers,
         )
 
-    assert res.status_code == 200
+    assert res.status_code == 202
     data = res.json()
     assert data["status"] == "queued"
     assert data["pending_interaction"] is None
@@ -111,7 +111,7 @@ def test_submit_clarification_custom_input(db, client):
             headers=headers,
         )
 
-    assert res.status_code == 200
+    assert res.status_code == 202
     assert res.json()["status"] == "queued"
 
 
@@ -129,7 +129,8 @@ def test_submit_clarification_wrong_option_rejected(db, client):
         )
 
     assert res.status_code == 400
-    assert "does not match" in res.json()["detail"].lower() or "does not match" in res.json()["detail"]
+    error_msg = res.json()["error"]["message"]
+    assert "does not match" in error_msg.lower() or "does not match" in error_msg
 
 
 def test_submit_clarification_invalid_action_rejected(db, client):
@@ -149,7 +150,7 @@ def test_submit_clarification_invalid_action_rejected(db, client):
 
 
 def test_submit_clarification_duplicate_rejected(db, client):
-    """Second submission after pending_interaction is cleared should return 400."""
+    """Second submission after pending_interaction is cleared should return 409."""
     run, anon_id = _make_awaiting_input_run(db, "needs_clarification")
     client.cookies.set("blog_anon", anon_id)
     headers = _csrf_headers(client)
@@ -161,16 +162,16 @@ def test_submit_clarification_duplicate_rejected(db, client):
             json={"action": "select_option", "value": "Machine learning"},
             headers=headers,
         )
-        assert first.status_code == 200
+        assert first.status_code == 202
 
-        # Second submission should fail because run is no longer awaiting_input
+        # Second submission should fail with 409 Conflict because run is no longer awaiting_input
         second = client.post(
             f"/runs/{run.id}/input",
             json={"action": "select_option", "value": "Machine learning"},
             headers=headers,
         )
 
-    assert second.status_code == 400
+    assert second.status_code == 409
 
 
 # --- Confirmation tests ---
@@ -188,7 +189,7 @@ def test_submit_confirmation_proceed(db, client):
             headers=headers,
         )
 
-    assert res.status_code == 200
+    assert res.status_code == 202
     assert res.json()["status"] == "queued"
 
 
@@ -205,11 +206,11 @@ def test_submit_confirmation_cancel(db, client):
             headers=headers,
         )
 
-    assert res.status_code == 200
+    assert res.status_code == 202
 
 
 def test_submit_input_wrong_owner_forbidden(db, client):
-    """Anonymous session with wrong anon_id must receive 403."""
+    """Anonymous session with wrong anon_id must receive 404 (hide existence)."""
     run, _ = _make_awaiting_input_run(db, "needs_clarification")
     client.cookies.set("blog_anon", "wrong-anon-id-9999")
     headers = _csrf_headers(client)
@@ -220,7 +221,7 @@ def test_submit_input_wrong_owner_forbidden(db, client):
         headers=headers,
     )
 
-    assert res.status_code == 403
+    assert res.status_code == 404
 
 
 def test_submit_input_unknown_run_404(db, client):
@@ -263,12 +264,12 @@ def test_resume_paused_run_after_timer_succeeds(db, client):
     with patch("apps.api.routers.runs.send_inngest_event", return_value=["mock-event-id"]):
         res = client.post(f"/runs/{run.id}/resume", headers=headers)
 
-    assert res.status_code == 200
+    assert res.status_code == 202
     assert res.json()["status"] == "queued"
 
 
 def test_resume_paused_run_before_timer_rejected(db, client):
-    """Resume paused run when resume_after is still in the future must return 400."""
+    """Resume paused run when resume_after is still in the future must return 409."""
     anon_id = "anon-resume-early-" + uuid.uuid4().hex[:8]
     future_time = datetime.now(timezone.utc) + timedelta(minutes=60)
     run = _make_paused_run(db, anon_id=anon_id, resume_after=future_time)
@@ -277,8 +278,9 @@ def test_resume_paused_run_before_timer_rejected(db, client):
 
     res = client.post(f"/runs/{run.id}/resume", headers=headers)
 
-    assert res.status_code == 400
-    assert "backoff" in res.json()["detail"].lower() or "wait" in res.json()["detail"].lower()
+    assert res.status_code == 409
+    error_msg = res.json()["error"]["message"]
+    assert "backoff" in error_msg.lower() or "wait" in error_msg.lower()
 
 
 def test_resume_failed_run_succeeds(db, client):
@@ -299,12 +301,12 @@ def test_resume_failed_run_succeeds(db, client):
     with patch("apps.api.routers.runs.send_inngest_event", return_value=["mock-event-id"]):
         res = client.post(f"/runs/{run.id}/resume", headers=headers)
 
-    assert res.status_code == 200
+    assert res.status_code == 202
     assert res.json()["status"] == "queued"
 
 
 def test_resume_completed_run_rejected(db, client):
-    """Cannot resume a completed run - must return 400."""
+    """Cannot resume a completed run - must return 409."""
     anon_id = "anon-completed-" + uuid.uuid4().hex[:8]
     run = Run(
         original_input="Completed topic",
@@ -319,11 +321,11 @@ def test_resume_completed_run_rejected(db, client):
 
     res = client.post(f"/runs/{run.id}/resume", headers=headers)
 
-    assert res.status_code == 400
+    assert res.status_code == 409
 
 
 def test_resume_wrong_owner_forbidden(db, client):
-    """Resume with wrong anonymous session ID must be forbidden."""
+    """Resume with wrong anonymous session ID must return 404 (hide existence)."""
     anon_id = "anon-resume-owner-" + uuid.uuid4().hex[:8]
     past_time = datetime.now(timezone.utc) - timedelta(minutes=5)
     run = _make_paused_run(db, anon_id=anon_id, resume_after=past_time)
@@ -332,7 +334,7 @@ def test_resume_wrong_owner_forbidden(db, client):
 
     res = client.post(f"/runs/{run.id}/resume", headers=headers)
 
-    assert res.status_code == 403
+    assert res.status_code == 404
 
 
 def test_hitl_real_payload_types(db, client):
@@ -362,7 +364,7 @@ def test_hitl_real_payload_types(db, client):
             json={"action": "select_option", "value": "Option A"},
             headers=headers,
         )
-    assert res1.status_code == 200
+    assert res1.status_code == 202
 
     # Test topic_confirmation_required
     run2 = Run(
@@ -383,5 +385,5 @@ def test_hitl_real_payload_types(db, client):
             json={"action": "proceed", "value": None},
             headers=headers,
         )
-    assert res2.status_code == 200
+    assert res2.status_code == 202
 

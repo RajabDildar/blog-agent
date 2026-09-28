@@ -106,7 +106,7 @@ def test_anonymous_run_creation_and_claim_on_login(client, db):
         "/runs",
         json={"input": "Distributed consensus in modern cloud systems"},
     )
-    assert res.status_code == 201
+    assert res.status_code == 202
     run_data = res.json()
     assert run_data["status"] == "queued"
     assert run_data["visibility"] == "private"
@@ -191,8 +191,8 @@ def test_visibility_and_feature_endpoints(client, db):
         json={"visibility": "public"},
         headers={"origin": "http://localhost:5173", "x-csrf-token": csrf_reg},
     )
-    assert bad_vis.status_code == 400
-    assert "Only completed runs can be made public" in bad_vis.json()["detail"]
+    assert bad_vis.status_code == 409
+    assert "Only completed runs can be made public" in bad_vis.json()["error"]["message"]
 
     # Mark run completed
     run.status = RunStatus.COMPLETED.value
@@ -353,7 +353,7 @@ def test_anonymous_cannot_publish(db, client):
         headers=headers,
     )
     assert res.status_code == 403
-    assert "Anonymous runs cannot be made public" in res.json()["detail"]
+    assert "Anonymous runs cannot be made public" in res.json()["error"]["message"]
 
 
 def test_orphan_run_access_denied(db, client):
@@ -382,16 +382,50 @@ def test_orphan_run_access_denied(db, client):
         json={"action": "select_option", "value": "A"},
         headers=headers,
     )
-    assert res_input.status_code in (403, 404)
+    assert res_input.status_code == 404
 
     # Stranger attempting resume
     run.status = RunStatus.FAILED.value
     db.commit()
     res_resume = client.post(f"/runs/{run.id}/resume", headers=headers)
-    assert res_resume.status_code in (403, 404)
+    assert res_resume.status_code == 404
 
     # Stranger attempting SSE
     res_events = client.get(f"/runs/{run.id}/events")
-    assert res_events.status_code in (403, 404)
+    assert res_events.status_code == 404
 
+
+def test_error_envelope_shape(client):
+    """All 4xx error responses must use {\"error\": {\"code\", \"message\", \"run_id\"}} envelope."""
+    # 404 for unknown run — runs router
+    run_id = str(uuid.uuid4())
+    res_run = client.get(f"/runs/{run_id}")
+    assert res_run.status_code == 404
+    body = res_run.json()
+    assert "error" in body, f"Expected 'error' key in response, got: {body}"
+    assert "code" in body["error"]
+    assert "message" in body["error"]
+    assert "run_id" in body["error"]
+    # Legacy "detail" key must not appear at the top level
+    assert "detail" not in body
+
+    # 401 for invalid Google credential — auth router
+    with patch(
+        "google.oauth2.id_token.verify_oauth2_token",
+        side_effect=Exception("invalid_grant: Token has been expired"),
+    ):
+        res_auth = client.post("/auth/google", json={"credential": "bad.token"})
+    assert res_auth.status_code == 401
+    body_auth = res_auth.json()
+    assert "error" in body_auth, f"Expected 'error' key in auth response, got: {body_auth}"
+    assert "code" in body_auth["error"]
+    assert "message" in body_auth["error"]
+    assert "detail" not in body_auth
+
+    # 422 for invalid pagination — gallery router (validation error envelope)
+    res_gallery = client.get("/gallery?page_size=-1")
+    assert res_gallery.status_code == 422
+    body_gallery = res_gallery.json()
+    assert "error" in body_gallery, f"Expected 'error' key in gallery response, got: {body_gallery}"
+    assert "detail" not in body_gallery
 

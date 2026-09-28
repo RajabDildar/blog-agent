@@ -1,7 +1,7 @@
 """Articles router for reading completed Markdown articles and delivering image assets."""
 from pathlib import Path
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, Request, Response, status
 from fastapi.responses import RedirectResponse, FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -10,6 +10,7 @@ from apps.api.config import get_settings
 from apps.api.dependencies import get_db, get_current_user_optional
 from apps.api.db.models import User, Run, RunStatus, RunVisibility
 from apps.api.schemas.runs import ArticleResponse
+from apps.api.schemas.errors import error_response
 from blog_agent.services.cloudinary_storage import (
     is_cloudinary_configured,
     generate_signed_image_url,
@@ -42,9 +43,11 @@ def get_article_by_id(
 
     run = db.scalar(select(Run).where(Run.id == run_id))
     if not run or run.status != RunStatus.COMPLETED.value:
-        raise HTTPException(
+        raise error_response(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Article '{run_id}' not found",
+            code="not_found",
+            message=f"Article '{run_id}' not found",
+            run_id=run_id,
         )
 
     # Public completed articles are accessible to anyone
@@ -64,9 +67,11 @@ def get_article_by_id(
 
     if not is_owner:
         # Hide existence of private article from unauthorized callers
-        raise HTTPException(
+        raise error_response(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Article '{run_id}' not found",
+            code="not_found",
+            message=f"Article '{run_id}' not found",
+            run_id=run_id,
         )
 
     return _format_article_response(run)
@@ -90,9 +95,11 @@ def get_article_asset(
 
     run = db.scalar(select(Run).where(Run.id == run_id))
     if not run:
-        raise HTTPException(
+        raise error_response(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Asset '{filename}' not found for run '{run_id}'",
+            code="not_found",
+            message=f"Asset '{filename}' not found for run '{run_id}'",
+            run_id=run_id,
         )
 
     # Authorization check
@@ -104,9 +111,11 @@ def get_article_asset(
             is_owner = True
 
         if not is_owner:
-            raise HTTPException(
+            raise error_response(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Asset '{filename}' not found",
+                code="not_found",
+                message=f"Asset '{filename}' not found",
+                run_id=run_id,
             )
 
     # Asset manifest check
@@ -132,7 +141,9 @@ def get_article_asset(
     if staged_file.is_file():
         return FileResponse(path=str(staged_file))
 
-    raise HTTPException(
+    raise error_response(
         status_code=status.HTTP_404_NOT_FOUND,
-        detail=f"Asset file '{filename}' not found",
+        code="not_found",
+        message=f"Asset file '{filename}' not found",
+        run_id=run_id,
     )

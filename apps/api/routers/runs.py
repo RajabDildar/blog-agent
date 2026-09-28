@@ -27,6 +27,7 @@ from apps.api.schemas.runs import (
     RunFeatureUpdateRequest,
     HumanInputRequest,
 )
+from apps.api.schemas.errors import error_response
 from blog_agent.schemas.interaction_types import InteractionType
 from apps.api.services.diagnostics_sink import WorkerSessionLocal
 from apps.api.services.quota_service import (
@@ -68,7 +69,7 @@ def _format_list_item(run: Run) -> RunListItemResponse:
     return item
 
 
-@router.post("", response_model=RunResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=RunResponse, status_code=status.HTTP_202_ACCEPTED)
 def create_new_run(
     payload: RunCreateRequest,
     request: Request,
@@ -89,7 +90,7 @@ def create_new_run(
     try:
         check_and_increment_abuse_limit(client_ip, db=db)
     except QuotaExceededError as e:
-        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(e))
+        raise error_response(status_code=status.HTTP_429_TOO_MANY_REQUESTS, code="abuse_limit_exceeded", message=str(e))
 
     # Pre-generation quota check
     try:
@@ -100,7 +101,7 @@ def create_new_run(
             client_ip=client_ip,
         )
     except QuotaExceededError as e:
-        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(e))
+        raise error_response(status_code=status.HTTP_429_TOO_MANY_REQUESTS, code="quota_exceeded", message=str(e))
 
     client_ip_hash = hash_identifier(client_ip) if client_ip else None
     try:
@@ -112,7 +113,7 @@ def create_new_run(
             client_ip_hash=client_ip_hash,
         )
     except RunInvariantError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise error_response(status_code=status.HTTP_400_BAD_REQUEST, code="invalid_input", message=str(e))
 
     # Record initial event in run_events
     initial_event = RunEvent(
@@ -126,8 +127,20 @@ def create_new_run(
     db.add(initial_event)
     db.commit()
 
-    # Dispatch Inngest event
-    send_inngest_event("blog-agent/run.start", {"run_id": run.id})
+    # Dispatch Inngest event with fail-safe handling (Task 7)
+    try:
+        send_inngest_event("blog-agent/run.start", {"run_id": run.id})
+    except Exception as e:
+        run.status = RunStatus.FAILED.value
+        run.error_code = "send_failure"
+        run.error_message = f"Failed to dispatch background job: {e}"
+        db.commit()
+        raise error_response(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            code="service_unavailable",
+            message=f"Failed to queue run for background generation: {e}",
+            run_id=run.id,
+        )
 
     return _format_run_response(run)
 
@@ -161,12 +174,14 @@ def get_run(
 
     run = db.scalar(select(Run).where(Run.id == run_id))
     if not run:
-        raise HTTPException(
+        raise error_response(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Run '{run_id}' not found",
+            code="run_not_found",
+            message=f"Run '{run_id}' not found",
+            run_id=run_id,
         )
 
-    access = authorize_run_access(
+    access =  authorize_run_access(
         run,
         user_id=user_id,
         anonymous_session_id=anon_id,
@@ -176,9 +191,11 @@ def get_run(
     elif access == "public":
         return _format_public_run_response(run)
     else:
-        raise HTTPException(
+        raise error_response(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Run '{run_id}' not found",
+            code="run_not_found",
+            message=f"Run '{run_id}' not found",
+            run_id=run_id,
         )
 
 
@@ -204,11 +221,11 @@ def change_run_visibility(
             anonymous_session_id=anon_id,
         )
     except RunNotFoundError:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Run '{run_id}' not found")
+        raise error_response(status_code=status.HTTP_404_NOT_FOUND, code="run_not_found", message=f"Run '{run_id}' not found", run_id=run_id)
     except PermissionError as e:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+        raise error_response(status_code=status.HTTP_403_FORBIDDEN, code="forbidden", message=str(e), run_id=run_id)
     except RunInvariantError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise error_response(status_code=status.HTTP_409_CONFLICT, code="invalid_state_transition", message=str(e), run_id=run_id)
 
     return _format_run_response(run)
 
@@ -230,18 +247,18 @@ def feature_run(
             is_admin=admin.is_admin,
         )
     except RunNotFoundError:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Run '{run_id}' not found")
+        raise error_response(status_code=status.HTTP_404_NOT_FOUND, code="run_not_found", message=f"Run '{run_id}' not found", run_id=run_id)
     except PermissionError as e:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+        raise error_response(status_code=status.HTTP_403_FORBIDDEN, code="forbidden", message=str(e), run_id=run_id)
     except RunInvariantError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise error_response(status_code=status.HTTP_409_CONFLICT, code="invalid_state_transition", message=str(e), run_id=run_id)
 
     return _format_run_response(run)
 
 
 # --- Phase 4 Operational Endpoints ---
 
-@router.post("/{run_id}/input", response_model=RunResponse)
+@router.post("/{run_id}/input", response_model=RunResponse, status_code=status.HTTP_202_ACCEPTED)
 def submit_human_input(
     run_id: str,
     payload: HumanInputRequest,
@@ -262,21 +279,23 @@ def submit_human_input(
     try:
         check_and_increment_abuse_limit(client_ip, db=db)
     except QuotaExceededError as e:
-        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(e))
+        raise error_response(status_code=status.HTTP_429_TOO_MANY_REQUESTS, code="abuse_limit_exceeded", message=str(e))
 
     run = db.scalar(select(Run).where(Run.id == run_id).with_for_update())
     if not run:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Run '{run_id}' not found")
+        raise error_response(status_code=status.HTTP_404_NOT_FOUND, code="run_not_found", message=f"Run '{run_id}' not found", run_id=run_id)
 
-    # Caller authorization
+    # Caller authorization: hide existence from non-owners (404)
     if authorize_run_access(run, user_id=user_id, anonymous_session_id=anon_id) != "owner":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+        raise error_response(status_code=status.HTTP_404_NOT_FOUND, code="run_not_found", message=f"Run '{run_id}' not found", run_id=run_id)
 
     # Status & pending interaction check
     if run.status != RunStatus.AWAITING_INPUT.value or not run.pending_interaction:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Run is not awaiting user clarification or confirmation",
+        raise error_response(
+            status_code=status.HTTP_409_CONFLICT,
+            code="invalid_state_transition",
+            message="Run is not awaiting user clarification or confirmation",
+            run_id=run_id,
         )
 
     interaction = run.pending_interaction
@@ -286,32 +305,42 @@ def submit_human_input(
         if payload.action == "select_option":
             options = interaction.get("options", [])
             if payload.value not in options:
-                raise HTTPException(
+                raise error_response(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Selected option '{payload.value}' does not match any offered option: {options}",
+                    code="invalid_input",
+                    message=f"Selected option '{payload.value}' does not match any offered option: {options}",
+                    run_id=run_id,
                 )
         elif payload.action == "custom_input":
             if not payload.value or not payload.value.strip():
-                raise HTTPException(
+                raise error_response(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Custom input value cannot be empty",
+                    code="invalid_input",
+                    message="Custom input value cannot be empty",
+                    run_id=run_id,
                 )
         else:
-            raise HTTPException(
+            raise error_response(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid action '{payload.action}' for clarification. Must be 'select_option' or 'custom_input'",
+                code="invalid_input",
+                message=f"Invalid action '{payload.action}' for clarification. Must be 'select_option' or 'custom_input'",
+                run_id=run_id,
             )
     elif itype in (InteractionType.TOPIC_CONFIRMATION_REQUIRED.value, "proposed_topic_confirmation"):
         if payload.action not in ("proceed", "cancel"):
-            raise HTTPException(
+            raise error_response(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid action '{payload.action}' for confirmation. Must be 'proceed' or 'cancel'",
+                code="invalid_input",
+                message=f"Invalid action '{payload.action}' for confirmation. Must be 'proceed' or 'cancel'",
+                run_id=run_id,
             )
     else:
         if payload.action not in ("select_option", "custom_input", "proceed", "cancel"):
-            raise HTTPException(
+            raise error_response(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Unsupported action '{payload.action}'",
+                code="invalid_input",
+                message=f"Unsupported action '{payload.action}'",
+                run_id=run_id,
             )
 
     # Atomically clear pending_interaction and update status
@@ -320,13 +349,24 @@ def submit_human_input(
     run.pending_interaction = None
     db.commit()
 
-    # Dispatch Inngest resume event
-    send_inngest_event("blog-agent/run.resume", {"run_id": run_id, "human_response": human_response_payload})
+    # Dispatch Inngest resume event with fail-safe rollback (Task 7)
+    try:
+        send_inngest_event("blog-agent/run.resume", {"run_id": run_id, "human_response": human_response_payload})
+    except Exception as e:
+        run.status = RunStatus.AWAITING_INPUT.value
+        run.pending_interaction = interaction
+        db.commit()
+        raise error_response(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            code="service_unavailable",
+            message=f"Failed to dispatch resume event: {e}",
+            run_id=run_id,
+        )
 
     return _format_run_response(run)
 
 
-@router.post("/{run_id}/resume", response_model=RunResponse)
+@router.post("/{run_id}/resume", response_model=RunResponse, status_code=status.HTTP_202_ACCEPTED)
 def resume_paused_run(
     run_id: str,
     request: Request,
@@ -343,30 +383,45 @@ def resume_paused_run(
 
     run = db.scalar(select(Run).where(Run.id == run_id).with_for_update())
     if not run:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Run '{run_id}' not found")
+        raise error_response(status_code=status.HTTP_404_NOT_FOUND, code="run_not_found", message=f"Run '{run_id}' not found", run_id=run_id)
 
     if authorize_run_access(run, user_id=user_id, anonymous_session_id=anon_id) != "owner":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+        raise error_response(status_code=status.HTTP_404_NOT_FOUND, code="run_not_found", message=f"Run '{run_id}' not found", run_id=run_id)
 
     if run.status not in (RunStatus.PAUSED.value, RunStatus.FAILED.value):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Run '{run_id}' in status '{run.status}' cannot be resumed. Resume is only allowed for 'paused' or 'failed' runs.",
+        raise error_response(
+            status_code=status.HTTP_409_CONFLICT,
+            code="invalid_state_transition",
+            message=f"Run '{run_id}' in status '{run.status}' cannot be resumed. Resume is only allowed for 'paused' or 'failed' runs.",
+            run_id=run_id,
         )
 
     if run.status == RunStatus.PAUSED.value and run.resume_after:
         now = datetime.now(timezone.utc)
         if now < run.resume_after:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Rate limit backoff active until {run.resume_after.isoformat()}. Please wait before resuming.",
+            raise error_response(
+                status_code=status.HTTP_409_CONFLICT,
+                code="rate_limit_backoff_active",
+                message=f"Rate limit backoff active until {run.resume_after.isoformat()}. Please wait before resuming.",
+                run_id=run_id,
             )
 
+    prev_status = run.status
     run.status = RunStatus.QUEUED.value
     db.commit()
 
-    # Dispatch Inngest resume event
-    send_inngest_event("blog-agent/run.resume", {"run_id": run_id, "human_response": None})
+    # Dispatch Inngest resume event with fail-safe rollback (Task 7)
+    try:
+        send_inngest_event("blog-agent/run.resume", {"run_id": run_id, "human_response": None})
+    except Exception as e:
+        run.status = prev_status
+        db.commit()
+        raise error_response(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            code="service_unavailable",
+            message=f"Failed to dispatch resume event: {e}",
+            run_id=run_id,
+        )
 
     return _format_run_response(run)
 
@@ -387,10 +442,10 @@ async def stream_run_events(
 
     run = db.scalar(select(Run).where(Run.id == run_id))
     if not run:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Run '{run_id}' not found")
+        raise error_response(status_code=status.HTTP_404_NOT_FOUND, code="run_not_found", message=f"Run '{run_id}' not found", run_id=run_id)
 
     if authorize_run_access(run, user_id=user_id, anonymous_session_id=anon_id) != "owner":
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Run '{run_id}' not found")
+        raise error_response(status_code=status.HTTP_404_NOT_FOUND, code="run_not_found", message=f"Run '{run_id}' not found", run_id=run_id)
 
     last_event_id_header = request.headers.get("Last-Event-ID")
     initial_last_seq = 0

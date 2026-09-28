@@ -63,7 +63,7 @@ def test_post_runs_emits_inngest_start_event(db):
                     headers=headers,
                 )
 
-    assert res.status_code == 201
+    assert res.status_code == 202
     data = res.json()
     assert data["status"] == "queued"
     run_id = data["id"]
@@ -88,7 +88,7 @@ def test_post_runs_does_not_invoke_graph_inline(db):
                         json={"input": "Graph inline safety check"},
                         headers=headers,
                     )
-    assert res.status_code == 201
+    assert res.status_code == 202
     mock_agent_run.assert_not_called()
 
 
@@ -107,7 +107,7 @@ def test_post_runs_persists_queued_event(db):
                     headers=headers,
                 )
 
-    assert res.status_code == 201
+    assert res.status_code == 202
     run_id = res.json()["id"]
 
     events = db.query(RunEvent).filter(RunEvent.run_id == run_id).all()
@@ -328,3 +328,91 @@ def test_handle_run_failure_sets_failed_status(db):
     fresh = db.get(Run, run_id)
     assert fresh.status == RunStatus.FAILED.value
     assert fresh.error_code == "generation_failed"
+
+
+def test_inngest_send_failure_returns_503(db):
+    """When send_inngest_event fails, POST /runs, /input, and /resume must return 503 and preserve state."""
+    from apps.api.main import app
+    client = TestClient(app, base_url="http://localhost:8000")
+    headers = _new_csrf(client)
+
+    # 1. POST /runs failure
+    with patch("apps.api.routers.runs.check_and_increment_abuse_limit"):
+        with patch("apps.api.routers.runs.check_pre_generation_quota"):
+            with patch("apps.api.routers.runs.send_inngest_event", side_effect=RuntimeError("Inngest down")):
+                res = client.post(
+                    "/runs",
+                    json={"input": "Inngest failure check"},
+                    headers=headers,
+                )
+    assert res.status_code == 503
+    err = res.json()["error"]
+    assert err["code"] == "service_unavailable"
+    assert "Inngest down" in err["message"]
+    # Check that the run was created and marked failed in DB
+    failed_run = db.query(Run).filter(Run.id == err["run_id"]).first()
+    assert failed_run is not None
+    assert failed_run.status == "failed"
+    assert failed_run.error_code == "send_failure"
+
+    # 2. POST /runs/{id}/input failure restores awaiting_input & pending_interaction
+    run = Run(
+        id=str(uuid.uuid4()),
+        anonymous_session_id="anon-failure-test",
+        original_input="Topic",
+        status=RunStatus.AWAITING_INPUT.value,
+        pending_interaction={"type": "clarification_required", "options": ["Option A", "Option B"]},
+    )
+    db.add(run)
+    db.commit()
+
+    client.cookies.set("blog_anon", "anon-failure-test")
+    with patch("apps.api.routers.runs.send_inngest_event", side_effect=RuntimeError("Inngest network error")):
+        res_input = client.post(
+            f"/runs/{run.id}/input",
+            json={"action": "select_option", "value": "Option A"},
+            headers=headers,
+        )
+    assert res_input.status_code == 503
+    db.refresh(run)
+    assert run.status == RunStatus.AWAITING_INPUT.value
+    assert run.pending_interaction is not None
+    assert run.pending_interaction["options"] == ["Option A", "Option B"]
+
+    # 3. POST /runs/{id}/resume failure restores paused/failed status
+    run.status = RunStatus.PAUSED.value
+    run.pending_interaction = None
+    db.commit()
+
+    with patch("apps.api.routers.runs.send_inngest_event", side_effect=RuntimeError("Inngest timeout")):
+        res_resume = client.post(
+            f"/runs/{run.id}/resume",
+            headers=headers,
+        )
+    assert res_resume.status_code == 503
+    db.refresh(run)
+    assert run.status == RunStatus.PAUSED.value
+
+
+def test_error_envelope_shape():
+    """All JSON error responses must adhere to {'error': {'code', 'message', 'run_id'}}."""
+    from apps.api.main import app
+    client = TestClient(app, base_url="http://localhost:8000")
+
+    # 404 error
+    res_404 = client.get(f"/runs/{uuid.uuid4()}")
+    assert res_404.status_code == 404
+    body = res_404.json()
+    assert "error" in body
+    assert isinstance(body["error"], dict)
+    assert "code" in body["error"]
+    assert "message" in body["error"]
+    assert "run_id" in body["error"]
+    assert body["error"]["code"] == "run_not_found"
+
+    # 422 error
+    res_422 = client.get("/gallery?page_size=-1")
+    assert res_422.status_code == 422
+    body_422 = res_422.json()
+    assert "error" in body_422
+    assert body_422["error"]["code"] == "validation_error"

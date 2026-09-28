@@ -1,5 +1,5 @@
 """Authentication router providing Google login, session cookies, and logout."""
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -7,6 +7,7 @@ from apps.api.config import get_settings
 from apps.api.dependencies import get_db, get_current_user, verify_csrf
 from apps.api.db.models import User
 from apps.api.schemas.auth import GoogleAuthRequest, UserResponse
+from apps.api.schemas.errors import error_response
 from apps.api.auth.google import verify_google_credential, GoogleAuthError
 from apps.api.auth.sessions import (
     create_session,
@@ -40,9 +41,10 @@ def login_with_google(
             client_id=settings.GOOGLE_CLIENT_ID,
         )
     except GoogleAuthError as e:
-        raise HTTPException(
+        raise error_response(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(e),
+            code="unauthorized",
+            message=str(e),
         )
 
     # Lookup or create user by google_sub
