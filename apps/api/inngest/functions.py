@@ -56,9 +56,10 @@ def execute_start_run(run_id: str) -> dict[str, Any]:
         original_input = run_record.original_input
 
     sink = PostgresDiagnosticsSink(run_id)
-    handle = create_checkpointer(backend=settings.CHECKPOINT_BACKEND)
+    handle = None
 
     try:
+        handle = create_checkpointer(backend=settings.CHECKPOINT_BACKEND)
         img_storage = CloudinaryImageStorage() if is_cloudinary_configured() else None
         result = agent_run(
             original_input,
@@ -78,11 +79,20 @@ def execute_start_run(run_id: str) -> dict[str, Any]:
         _handle_run_failure(run_id, exc)
         return {"status": "failed", "run_id": run_id, "error": str(exc)}
     finally:
-        handle.close()
+        if handle:
+            handle.close()
 
 
 def execute_resume_run(run_id: str, human_response: Optional[dict[str, Any]] = None) -> dict[str, Any]:
     """Synchronous execution step for resuming an interrupted or paused run."""
+    parsed_response = None
+    if human_response:
+        try:
+            parsed_response = IntentHumanResponse.model_validate(human_response)
+        except Exception as exc:
+            logger.exception(f"Invalid human response payload for run {run_id}: {exc}")
+            return {"status": "error", "error": "invalid_human_response", "detail": str(exc)}
+
     with WorkerSessionLocal() as session:
         run_record = session.scalar(select(Run).where(Run.id == run_id).with_for_update())
         if not run_record:
@@ -93,13 +103,10 @@ def execute_resume_run(run_id: str, human_response: Optional[dict[str, Any]] = N
         session.commit()
 
     sink = PostgresDiagnosticsSink(run_id)
-    handle = create_checkpointer(backend=settings.CHECKPOINT_BACKEND)
-
-    parsed_response = None
-    if human_response:
-        parsed_response = IntentHumanResponse.model_validate(human_response)
+    handle = None
 
     try:
+        handle = create_checkpointer(backend=settings.CHECKPOINT_BACKEND)
         img_storage = CloudinaryImageStorage() if is_cloudinary_configured() else None
         result = agent_resume(
             run_id=run_id,
@@ -119,7 +126,8 @@ def execute_resume_run(run_id: str, human_response: Optional[dict[str, Any]] = N
         _handle_run_failure(run_id, exc)
         return {"status": "failed", "run_id": run_id, "error": str(exc)}
     finally:
-        handle.close()
+        if handle:
+            handle.close()
 
 
 def _handle_run_outcome(run_id: str, result: dict[str, Any], handle) -> None:
