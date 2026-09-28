@@ -187,9 +187,10 @@ def reserve_generation_quota_atomic(
             db.commit()
             return False
 
-        if client_ip:
+        effective_ip_identifier = client_ip or run.client_ip_hash
+        if effective_ip_identifier:
             day_str = utc_today.strftime("%Y%m%d")
-            ip_bucket_key = hash_identifier(f"quota:anon_ip_day:{client_ip}:{day_str}")
+            ip_bucket_key = hash_identifier(f"quota:anon_ip_day:{effective_ip_identifier}:{day_str}")
             bucket = db.scalar(
                 select(RateLimitBucket)
                 .where(RateLimitBucket.bucket_key == ip_bucket_key)

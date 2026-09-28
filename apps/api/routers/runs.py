@@ -32,6 +32,7 @@ from apps.api.services.quota_service import (
     check_and_increment_abuse_limit,
     check_pre_generation_quota,
     QuotaExceededError,
+    hash_identifier,
 )
 from apps.api.services.run_service import (
     create_run,
@@ -93,12 +94,14 @@ def create_new_run(
     except QuotaExceededError as e:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(e))
 
+    client_ip_hash = hash_identifier(client_ip) if client_ip else None
     try:
         run = create_run(
             db,
             original_input=payload.input,
             user_id=user_id,
             anonymous_session_id=anon_id,
+            client_ip_hash=client_ip_hash,
         )
     except RunInvariantError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

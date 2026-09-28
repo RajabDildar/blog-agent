@@ -21,6 +21,7 @@ def create_run(
     original_input: str,
     user_id: Optional[str] = None,
     anonymous_session_id: Optional[str] = None,
+    client_ip_hash: Optional[str] = None,
 ) -> Run:
     """
     Creates a new queued run record.
@@ -37,6 +38,7 @@ def create_run(
     run = Run(
         user_id=user_id,
         anonymous_session_id=anonymous_session_id if not user_id else None,
+        client_ip_hash=client_ip_hash,
         original_input=cleaned_input,
         topic=None,
         status=RunStatus.QUEUED.value,
