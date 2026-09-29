@@ -220,12 +220,12 @@ provider_retry_policy = RetryPolicy(
 
 WRITER_MODEL = os.getenv(
     "GROQ_WRITER_MODEL",
-    "llama-3.3-70b-versatile",
+    "openai/gpt-oss-120b",
 )
 
 REVISION_MODEL = os.getenv(
     "GROQ_REVISION_MODEL",
-    "llama-3.3-70b-versatile",
+    "openai/gpt-oss-120b",
 )
 
 GEMINI_MODEL = os.getenv(
@@ -240,7 +240,7 @@ INTENT_GEMINI_MODEL = os.getenv(
 
 GROQ_INTENT_MODEL = os.getenv(
     "GROQ_INTENT_MODEL",
-    "llama-3.3-70b-versatile",
+    "openai/gpt-oss-120b",
 )
 
 MAX_USER_INPUT_CHARS = int(
@@ -279,4 +279,3 @@ MAX_EDITORIAL_REVISIONS = 1
 MAX_ARTICLE_REPAIRS = 1
 
 EVAL_JUDGE_IMAGE_INPUT = True
-
