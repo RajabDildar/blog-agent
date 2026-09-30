@@ -1,17 +1,19 @@
 """Phase 4 tests: HITL API endpoints (POST /runs/{id}/input, POST /runs/{id}/resume)."""
+
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone, timedelta
-from unittest.mock import MagicMock, patch
+from datetime import UTC, datetime, timedelta
+from unittest.mock import patch
+
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from fastapi.testclient import TestClient
 
-from apps.api.main import app
 from apps.api.config import get_settings
-from apps.api.db.models import Run, RunStatus, User
+from apps.api.db.models import Run, RunStatus
+from apps.api.main import app
 
 settings = get_settings()
 
@@ -66,7 +68,9 @@ def _make_awaiting_input_run(db, interaction_type="needs_clarification"):
             "message": "We'll generate an article about this topic.",
         }
     run = Run(
-        original_input="AI" if interaction_type == "needs_clarification" else "vague ai stuff",
+        original_input="AI"
+        if interaction_type == "needs_clarification"
+        else "vague ai stuff",
         status=RunStatus.AWAITING_INPUT.value,
         anonymous_session_id=anon_id,
         pending_interaction=pending,
@@ -79,13 +83,16 @@ def _make_awaiting_input_run(db, interaction_type="needs_clarification"):
 
 # --- Clarification tests ---
 
+
 def test_submit_clarification_select_option_valid(db, client):
     """Valid select_option from offered options should be accepted and enqueue resume."""
     run, anon_id = _make_awaiting_input_run(db, "needs_clarification")
     client.cookies.set("blog_anon", anon_id)
     headers = _csrf_headers(client)
 
-    with patch("apps.api.routers.runs.send_inngest_event", return_value=["mock-event-id"]):
+    with patch(
+        "apps.api.routers.runs.send_inngest_event", return_value=["mock-event-id"]
+    ):
         res = client.post(
             f"/runs/{run.id}/input",
             json={"action": "select_option", "value": "Machine learning"},
@@ -104,10 +111,15 @@ def test_submit_clarification_custom_input(db, client):
     client.cookies.set("blog_anon", anon_id)
     headers = _csrf_headers(client)
 
-    with patch("apps.api.routers.runs.send_inngest_event", return_value=["mock-event-id"]):
+    with patch(
+        "apps.api.routers.runs.send_inngest_event", return_value=["mock-event-id"]
+    ):
         res = client.post(
             f"/runs/{run.id}/input",
-            json={"action": "custom_input", "value": "AI applications in precision medicine"},
+            json={
+                "action": "custom_input",
+                "value": "AI applications in precision medicine",
+            },
             headers=headers,
         )
 
@@ -121,10 +133,15 @@ def test_submit_clarification_wrong_option_rejected(db, client):
     client.cookies.set("blog_anon", anon_id)
     headers = _csrf_headers(client)
 
-    with patch("apps.api.routers.runs.send_inngest_event", return_value=["mock-event-id"]):
+    with patch(
+        "apps.api.routers.runs.send_inngest_event", return_value=["mock-event-id"]
+    ):
         res = client.post(
             f"/runs/{run.id}/input",
-            json={"action": "select_option", "value": "Quantum computing"},  # Not an offered option
+            json={
+                "action": "select_option",
+                "value": "Quantum computing",
+            },  # Not an offered option
             headers=headers,
         )
 
@@ -139,7 +156,9 @@ def test_submit_clarification_invalid_action_rejected(db, client):
     client.cookies.set("blog_anon", anon_id)
     headers = _csrf_headers(client)
 
-    with patch("apps.api.routers.runs.send_inngest_event", return_value=["mock-event-id"]):
+    with patch(
+        "apps.api.routers.runs.send_inngest_event", return_value=["mock-event-id"]
+    ):
         res = client.post(
             f"/runs/{run.id}/input",
             json={"action": "proceed"},  # Wrong for clarification
@@ -155,7 +174,9 @@ def test_submit_clarification_duplicate_rejected(db, client):
     client.cookies.set("blog_anon", anon_id)
     headers = _csrf_headers(client)
 
-    with patch("apps.api.routers.runs.send_inngest_event", return_value=["mock-event-id"]):
+    with patch(
+        "apps.api.routers.runs.send_inngest_event", return_value=["mock-event-id"]
+    ):
         # First submission clears pending_interaction
         first = client.post(
             f"/runs/{run.id}/input",
@@ -176,13 +197,16 @@ def test_submit_clarification_duplicate_rejected(db, client):
 
 # --- Confirmation tests ---
 
+
 def test_submit_confirmation_proceed(db, client):
     """'proceed' action on a confirmation interrupt should be accepted."""
     run, anon_id = _make_awaiting_input_run(db, "proposed_topic_confirmation")
     client.cookies.set("blog_anon", anon_id)
     headers = _csrf_headers(client)
 
-    with patch("apps.api.routers.runs.send_inngest_event", return_value=["mock-event-id"]):
+    with patch(
+        "apps.api.routers.runs.send_inngest_event", return_value=["mock-event-id"]
+    ):
         res = client.post(
             f"/runs/{run.id}/input",
             json={"action": "proceed"},
@@ -199,7 +223,9 @@ def test_submit_confirmation_cancel(db, client):
     client.cookies.set("blog_anon", anon_id)
     headers = _csrf_headers(client)
 
-    with patch("apps.api.routers.runs.send_inngest_event", return_value=["mock-event-id"]):
+    with patch(
+        "apps.api.routers.runs.send_inngest_event", return_value=["mock-event-id"]
+    ):
         res = client.post(
             f"/runs/{run.id}/input",
             json={"action": "cancel"},
@@ -240,6 +266,7 @@ def test_submit_input_unknown_run_404(db, client):
 
 # --- Resume paused/failed tests ---
 
+
 def _make_paused_run(db, *, anon_id: str, resume_after: datetime | None = None):
     run = Run(
         original_input="Paused run topic",
@@ -256,12 +283,14 @@ def _make_paused_run(db, *, anon_id: str, resume_after: datetime | None = None):
 def test_resume_paused_run_after_timer_succeeds(db, client):
     """Resume paused run when resume_after is in the past should succeed."""
     anon_id = "anon-resume-" + uuid.uuid4().hex[:8]
-    past_time = datetime.now(timezone.utc) - timedelta(minutes=10)
+    past_time = datetime.now(UTC) - timedelta(minutes=10)
     run = _make_paused_run(db, anon_id=anon_id, resume_after=past_time)
     client.cookies.set("blog_anon", anon_id)
     headers = _csrf_headers(client)
 
-    with patch("apps.api.routers.runs.send_inngest_event", return_value=["mock-event-id"]):
+    with patch(
+        "apps.api.routers.runs.send_inngest_event", return_value=["mock-event-id"]
+    ):
         res = client.post(f"/runs/{run.id}/resume", headers=headers)
 
     assert res.status_code == 202
@@ -271,7 +300,7 @@ def test_resume_paused_run_after_timer_succeeds(db, client):
 def test_resume_paused_run_before_timer_rejected(db, client):
     """Resume paused run when resume_after is still in the future must return 409."""
     anon_id = "anon-resume-early-" + uuid.uuid4().hex[:8]
-    future_time = datetime.now(timezone.utc) + timedelta(minutes=60)
+    future_time = datetime.now(UTC) + timedelta(minutes=60)
     run = _make_paused_run(db, anon_id=anon_id, resume_after=future_time)
     client.cookies.set("blog_anon", anon_id)
     headers = _csrf_headers(client)
@@ -298,7 +327,9 @@ def test_resume_failed_run_succeeds(db, client):
     client.cookies.set("blog_anon", anon_id)
     headers = _csrf_headers(client)
 
-    with patch("apps.api.routers.runs.send_inngest_event", return_value=["mock-event-id"]):
+    with patch(
+        "apps.api.routers.runs.send_inngest_event", return_value=["mock-event-id"]
+    ):
         res = client.post(f"/runs/{run.id}/resume", headers=headers)
 
     assert res.status_code == 202
@@ -327,7 +358,7 @@ def test_resume_completed_run_rejected(db, client):
 def test_resume_wrong_owner_forbidden(db, client):
     """Resume with wrong anonymous session ID must return 404 (hide existence)."""
     anon_id = "anon-resume-owner-" + uuid.uuid4().hex[:8]
-    past_time = datetime.now(timezone.utc) - timedelta(minutes=5)
+    past_time = datetime.now(UTC) - timedelta(minutes=5)
     run = _make_paused_run(db, anon_id=anon_id, resume_after=past_time)
     client.cookies.set("blog_anon", "different-anon-id")
     headers = _csrf_headers(client)
@@ -386,4 +417,3 @@ def test_hitl_real_payload_types(db, client):
             headers=headers,
         )
     assert res2.status_code == 202
-

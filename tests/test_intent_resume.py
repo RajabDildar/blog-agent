@@ -1,10 +1,10 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
+
 import pytest
 
 from blog_agent.graph import main_graph
-from blog_agent.schemas.models import IntentAnalysis, IntentHumanResponse
+from blog_agent.schemas.models import IntentHumanResponse
 from blog_agent.services.checkpointer import create_checkpointer
-from blog_agent.services.run_diagnostics import RunDiagnostics, load_diagnostics
 
 
 def test_resume_rejects_human_response_when_no_interrupt_pending(tmp_path):
@@ -14,10 +14,6 @@ def test_resume_rejects_human_response_when_no_interrupt_pending(tmp_path):
 
     try:
         run_id = "test-no-interrupt-resume"
-        # Seed a run that failed during ordinary execution without interrupt
-        config = {"configurable": {"thread_id": run_id}}
-        diagnostics = RunDiagnostics(run_id=run_id, topic="Test")
-
         # Mock app that has next node but no interrupt
         mock_app = MagicMock()
         mock_state = MagicMock()

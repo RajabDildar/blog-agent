@@ -128,10 +128,9 @@ def is_official_primary_source(
     if source_type in OFFICIAL_PRIMARY_SOURCE_TYPES:
         return True
 
-    if source_type == "github_repository" and is_github_official_organization(url):
-        return True
-
-    return False
+    return bool(
+        source_type == "github_repository" and is_github_official_organization(url)
+    )
 
 
 def classify_source(url: str) -> SourceQuality:
@@ -226,10 +225,12 @@ class SourceRatios:
 
 DEFAULT_WEAK_AUTHORITY_THRESHOLD = 0.5
 
-WEAK_SOURCE_CATEGORIES: frozenset[SourceType] = frozenset({
-    "vendor_blog",
-    "unknown",
-})
+WEAK_SOURCE_CATEGORIES: frozenset[SourceType] = frozenset(
+    {
+        "vendor_blog",
+        "unknown",
+    }
+)
 
 
 def _is_weak_source(
@@ -241,10 +242,7 @@ def _is_weak_source(
     if source_type in WEAK_SOURCE_CATEGORIES:
         return True
 
-    if authority_score < weak_authority_threshold:
-        return True
-
-    return False
+    return authority_score < weak_authority_threshold
 
 
 def compute_source_ratios(

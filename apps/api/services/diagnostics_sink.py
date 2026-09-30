@@ -1,13 +1,15 @@
 """PostgreSQL diagnostics sink implementation bridging core agent diagnostics to run_events."""
+
 from __future__ import annotations
 
 import threading
-from typing import Any, Optional
-from sqlalchemy import select, func, update
+from typing import Any
+
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
-from apps.api.db.session import engine
 from apps.api.db.models import Run, RunEvent
+from apps.api.db.session import engine
 
 # Thread-safe session factory for worker execution
 WorkerSessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
@@ -78,11 +80,11 @@ class PostgresDiagnosticsSink:
     and updates `runs.diagnostics_summary`.
     """
 
-    def __init__(self, run_id: str, session_factory: Optional[sessionmaker] = None):
+    def __init__(self, run_id: str, session_factory: sessionmaker | None = None):
         self.run_id = run_id
         self.session_factory = session_factory or WorkerSessionLocal
         self._lock = threading.Lock()
-        self._sequence: Optional[int] = None
+        self._sequence: int | None = None
 
     def _get_next_sequence(self, session: Session) -> int:
         with self._lock:
@@ -114,7 +116,13 @@ class PostgresDiagnosticsSink:
                 message = f"Failed stage: {stage}"
 
         # Clean payload
-        payload = sanitize_payload({k: v for k, v in event.items() if k not in ("event", "node", "stage", "message", "timestamp")})
+        payload = sanitize_payload(
+            {
+                k: v
+                for k, v in event.items()
+                if k not in ("event", "node", "stage", "message", "timestamp")
+            }
+        )
 
         with self.session_factory() as session:
             try:
@@ -129,7 +137,7 @@ class PostgresDiagnosticsSink:
                 )
                 session.add(run_event)
                 session.commit()
-            except Exception:
+            except Exception:  # noqa: BLE001 - Diagnostics persistence must never fail graph execution.
                 session.rollback()
 
     def record_summary(self, run_id: str, summary: dict[str, Any]) -> None:
@@ -147,5 +155,5 @@ class PostgresDiagnosticsSink:
                     .values(diagnostics_summary=clean_summary)
                 )
                 session.commit()
-            except Exception:
+            except Exception:  # noqa: BLE001 - Diagnostics persistence must never fail graph execution.
                 session.rollback()

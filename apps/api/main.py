@@ -1,10 +1,10 @@
-from fastapi import FastAPI, Request, HTTPException, status
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from apps.api.config import get_settings
-from apps.api.routers import auth, runs, gallery, articles
+from apps.api.routers import articles, auth, gallery, runs
 
 settings = get_settings()
 
@@ -52,7 +52,9 @@ def create_app() -> FastAPI:
         )
 
     @app.exception_handler(RequestValidationError)
-    async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    async def validation_exception_handler(
+        request: Request, exc: RequestValidationError
+    ):
         return JSONResponse(
             status_code=422,
             content={
@@ -86,6 +88,7 @@ def create_app() -> FastAPI:
 
     # Mount Inngest background execution endpoint
     import inngest.fast_api
+
     from apps.api.inngest import inngest_client, inngest_functions
 
     inngest.fast_api.serve(

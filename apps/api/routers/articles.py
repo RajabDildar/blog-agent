@@ -1,19 +1,18 @@
 """Articles router for reading completed Markdown articles and delivering image assets."""
-from pathlib import Path
-from typing import Optional
-from fastapi import APIRouter, Depends, Request, Response, status
-from fastapi.responses import RedirectResponse, FileResponse
+
+from fastapi import APIRouter, Depends, Request, status
+from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from apps.api.config import get_settings
-from apps.api.dependencies import get_db, get_current_user_optional
-from apps.api.db.models import User, Run, RunStatus, RunVisibility
-from apps.api.schemas.runs import ArticleResponse
+from apps.api.db.models import Run, RunStatus, RunVisibility, User
+from apps.api.dependencies import get_current_user_optional, get_db
 from apps.api.schemas.errors import error_response
+from apps.api.schemas.runs import ArticleResponse
 from blog_agent.services.cloudinary_storage import (
-    is_cloudinary_configured,
     generate_signed_image_url,
+    is_cloudinary_configured,
 )
 from blog_agent.services.run_paths import published_images_dir, run_images_dir
 
@@ -32,14 +31,16 @@ def get_article_by_id(
     run_id: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user_optional),
+    current_user: User | None = Depends(get_current_user_optional),
 ):
     """
     Fetches a completed technical article by ID.
     Enforces that only completed public articles or completed owned private articles are readable.
     """
     user_id = current_user.id if current_user else None
-    anon_id = request.cookies.get(settings.ANONYMOUS_COOKIE_NAME) if not user_id else None
+    anon_id = (
+        request.cookies.get(settings.ANONYMOUS_COOKIE_NAME) if not user_id else None
+    )
 
     run = db.scalar(select(Run).where(Run.id == run_id))
     if not run or run.status != RunStatus.COMPLETED.value:
@@ -56,12 +57,10 @@ def get_article_by_id(
 
     # Private completed article owner check
     is_owner = False
-    if user_id and run.user_id == user_id:
-        is_owner = True
-    elif (
-        anon_id
-        and not run.user_id
-        and run.anonymous_session_id == anon_id
+    if (
+        user_id
+        and run.user_id == user_id
+        or (anon_id and not run.user_id and run.anonymous_session_id == anon_id)
     ):
         is_owner = True
 
@@ -83,7 +82,7 @@ def get_article_asset(
     filename: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user_optional),
+    current_user: User | None = Depends(get_current_user_optional),
 ):
     """
     Delivers an image asset for a completed article.
@@ -91,7 +90,9 @@ def get_article_asset(
     or serves the local image file in local dev mode.
     """
     user_id = current_user.id if current_user else None
-    anon_id = request.cookies.get(settings.ANONYMOUS_COOKIE_NAME) if not user_id else None
+    anon_id = (
+        request.cookies.get(settings.ANONYMOUS_COOKIE_NAME) if not user_id else None
+    )
 
     run = db.scalar(select(Run).where(Run.id == run_id))
     if not run:
@@ -105,9 +106,13 @@ def get_article_asset(
     # Authorization check
     if run.visibility != RunVisibility.PUBLIC.value:
         is_owner = False
-        if user_id and run.user_id == user_id:
-            is_owner = True
-        elif anon_id and not run.user_id and run.anonymous_session_id == anon_id:
+        if (
+            user_id
+            and run.user_id == user_id
+            or anon_id
+            and not run.user_id
+            and run.anonymous_session_id == anon_id
+        ):
             is_owner = True
 
         if not is_owner:
@@ -126,10 +131,16 @@ def get_article_asset(
     )
 
     # Try Cloudinary signed URL redirect if public_id is available
-    if matching_asset and matching_asset.get("public_id") and not matching_asset["public_id"].startswith("local:"):
-        if is_cloudinary_configured():
-            signed_url = generate_signed_image_url(matching_asset["public_id"])
-            return RedirectResponse(url=signed_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+    if (
+        matching_asset
+        and matching_asset.get("public_id")
+        and not matching_asset["public_id"].startswith("local:")
+        and is_cloudinary_configured()
+    ):
+        signed_url = generate_signed_image_url(matching_asset["public_id"])
+        return RedirectResponse(
+            url=signed_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT
+        )
 
     # Local file fallback for CLI / testing environment
     pub_dir = published_images_dir(title=run.article_title or "", run_id=run_id)

@@ -1,9 +1,9 @@
 import argparse
-from datetime import UTC, datetime
 import uuid
+from datetime import UTC, datetime
 
 from blog_agent import resume, run
-from blog_agent.graph.main_graph import app, _thread_config
+from blog_agent.graph.main_graph import _thread_config, app
 from blog_agent.schemas.models import IntentHumanResponse
 from blog_agent.services.rate_limits import RateLimitRetryExhausted
 from blog_agent.services.run_diagnostics import (
@@ -95,8 +95,8 @@ def handle_interaction_and_finish(result: dict, run_id: str) -> None:
             options = payload.get("options", [])
             for i, opt in enumerate(options, 1):
                 print(f"  [{i}] {opt}")
-            print(f"  [4] Enter custom response")
-            print(f"  [5] Cancel")
+            print("  [4] Enter custom response")
+            print("  [5] Cancel")
 
             human_response: IntentHumanResponse | None = None
             while human_response is None:
@@ -123,7 +123,7 @@ def handle_interaction_and_finish(result: dict, run_id: str) -> None:
 
             try:
                 result = resume(run_id, human_response=human_response)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - CLI reports all generation failures before exiting.
                 report_failure(exc, run_id)
                 raise SystemExit(1)
 
@@ -145,7 +145,7 @@ def handle_interaction_and_finish(result: dict, run_id: str) -> None:
 
             try:
                 result = resume(run_id, human_response=human_response)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - CLI reports all generation failures before exiting.
                 report_failure(exc, run_id)
                 raise SystemExit(1)
 
@@ -191,7 +191,7 @@ def main():
 
         try:
             result = resume(run_id)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - CLI reports all resume failures before exiting.
             report_failure(
                 exc,
                 run_id,
@@ -214,7 +214,7 @@ def main():
             topic,
             run_id=run_id,
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - CLI reports all generation failures before exiting.
         report_failure(
             exc,
             run_id,

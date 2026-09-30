@@ -1,7 +1,11 @@
 import json
 from pathlib import Path
 
-from eval.models import EvaluationManifest, EvaluationMetrics, EvaluationRun, EvaluationScores
+from eval.models import (
+    EvaluationManifest,
+    EvaluationRun,
+    EvaluationScores,
+)
 
 
 def calculate_average_scores(
@@ -53,7 +57,9 @@ def _total_citation_issues(runs: list[EvaluationRun]) -> dict[str, int]:
     return totals
 
 
-def build_report(runs: list[EvaluationRun], manifest: EvaluationManifest | None = None) -> str:
+def build_report(
+    runs: list[EvaluationRun], manifest: EvaluationManifest | None = None
+) -> str:
     averages = calculate_average_scores(runs)
 
     lines = [
@@ -65,20 +71,24 @@ def build_report(runs: list[EvaluationRun], manifest: EvaluationManifest | None 
     ]
 
     if manifest is not None:
-        lines.extend([
-            "## Experiment",
-            "",
-            f"- Name: `{manifest.experiment_name}`",
-            f"- Purpose: {manifest.purpose}",
-            f"- Pipeline commit: `{manifest.pipeline_commit}`",
-            f"- Judge image input: {manifest.judge_image_input}",
-            "",
-        ])
+        lines.extend(
+            [
+                "## Experiment",
+                "",
+                f"- Name: `{manifest.experiment_name}`",
+                f"- Purpose: {manifest.purpose}",
+                f"- Pipeline commit: `{manifest.pipeline_commit}`",
+                f"- Judge image input: {manifest.judge_image_input}",
+                "",
+            ]
+        )
 
-    lines.extend([
-        "## Average scores",
-        "",
-    ])
+    lines.extend(
+        [
+            "## Average scores",
+            "",
+        ]
+    )
 
     if averages:
         for name, score in averages.items():
@@ -90,20 +100,25 @@ def build_report(runs: list[EvaluationRun], manifest: EvaluationManifest | None 
 
     # Operational summary across all runs
     all_revision_rate = _revision_rate(runs)
-    lines.extend([
-        "",
-        "## Operational summary",
-        "",
-        f"- Revision rate: {all_revision_rate:.2f}" if all_revision_rate is not None else "- Revision rate: n/a",
-        f"- Average LLM calls: {_average_metric(runs, 'llm_calls')}",
-        f"- Average research calls: {_average_metric(runs, 'research_calls')}",
-        f"- Average image calls: {_average_metric(runs, 'image_calls')}",
-        f"- Average node attempts: {_average_metric(runs, 'node_attempts')}",
-        f"- Average retries: {_average_metric(runs, 'retries')}",
-        f"- Average generation time: {_average_metric(runs, 'generation_time_seconds'):.2f}s"
-        if runs else "- Average generation time: n/a",
-        "",
-    ])
+    lines.extend(
+        [
+            "",
+            "## Operational summary",
+            "",
+            f"- Revision rate: {all_revision_rate:.2f}"
+            if all_revision_rate is not None
+            else "- Revision rate: n/a",
+            f"- Average LLM calls: {_average_metric(runs, 'llm_calls')}",
+            f"- Average research calls: {_average_metric(runs, 'research_calls')}",
+            f"- Average image calls: {_average_metric(runs, 'image_calls')}",
+            f"- Average node attempts: {_average_metric(runs, 'node_attempts')}",
+            f"- Average retries: {_average_metric(runs, 'retries')}",
+            f"- Average generation time: {_average_metric(runs, 'generation_time_seconds'):.2f}s"
+            if runs
+            else "- Average generation time: n/a",
+            "",
+        ]
+    )
 
     lines.extend(
         [
@@ -145,9 +160,11 @@ def build_report(runs: list[EvaluationRun], manifest: EvaluationManifest | None 
                 # (vendor_blog, unknown) OR authority_score < WEAK_SOURCE_AUTHORITY_THRESHOLD.
                 # This is distinct from support_strength (claim-support strength).
                 (f"- Weak source ratio: {run.metrics.weak_source_ratio:.2f}"),
-                "- Weak source ratio definition: evidence in weak source categories "
-                "(vendor_blog or unknown source_type) or authority_score below threshold "
-                "(default 0.5). Separate from LLM claim-support strength.",
+                (
+                    "- Weak source ratio definition: evidence in weak source categories "
+                    "(vendor_blog or unknown source_type) or authority_score below threshold "
+                    "(default 0.5). Separate from LLM claim-support strength."
+                ),
                 (f"- Unique domains: {run.metrics.unique_domain_count}"),
                 (f"- Source type distribution: {run.metrics.source_type_distribution}"),
                 (f"- Authority distribution: {run.metrics.authority_distribution}"),
@@ -186,7 +203,7 @@ def load_results(
     )
 
     if not isinstance(data, list):
-        raise ValueError(
+        raise ValueError(  # noqa: TRY004 - Preserve the existing loader exception contract.
             "Evaluation results must be a JSON list.",
         )
 
@@ -252,9 +269,14 @@ def build_comparison_report(
     baseline_scores = calculate_average_scores(baseline_runs)
     candidate_scores = calculate_average_scores(candidate_runs)
 
-    lines = ["# Evaluation Comparison", "", "## Score deltas", "",
-             "| Metric | Baseline | Candidate | Delta |",
-             "| --- | ---: | ---: | ---: |"]
+    lines = [
+        "# Evaluation Comparison",
+        "",
+        "## Score deltas",
+        "",
+        "| Metric | Baseline | Candidate | Delta |",
+        "| --- | ---: | ---: | ---: |",
+    ]
 
     for name in sorted(set(baseline_scores) | set(candidate_scores)):
         baseline = baseline_scores.get(name)
@@ -282,9 +304,15 @@ def build_comparison_report(
         ("rate_limit_wait_seconds", "Average rate-limit wait (s)"),
     ]
 
-    lines.extend(["", "## Operational metric deltas", "",
-                  "| Metric | Baseline | Candidate | Delta |",
-                  "| --- | ---: | ---: | ---: |"])
+    lines.extend(
+        [
+            "",
+            "## Operational metric deltas",
+            "",
+            "| Metric | Baseline | Candidate | Delta |",
+            "| --- | ---: | ---: | ---: |",
+        ]
+    )
 
     def _run_avg(runs: list[EvaluationRun], field: str) -> float | None:
         if not runs:
@@ -333,9 +361,15 @@ def build_comparison_report(
     c_issues = _total_citation_issues(candidate_runs)
     all_issue_keys = sorted(set(b_issues) | set(c_issues))
     if all_issue_keys:
-        lines.extend(["", "## Citation issue deltas", "",
-                      "| Issue key | Baseline total | Candidate total | Delta |",
-                      "| --- | ---: | ---: | ---: |"])
+        lines.extend(
+            [
+                "",
+                "## Citation issue deltas",
+                "",
+                "| Issue key | Baseline total | Candidate total | Delta |",
+                "| --- | ---: | ---: | ---: |",
+            ]
+        )
         for key in all_issue_keys:
             b_cnt = b_issues.get(key, 0)
             c_cnt = c_issues.get(key, 0)
@@ -343,7 +377,9 @@ def build_comparison_report(
 
     # ---- Per-topic regressions (all score dimensions) ----
     lines.extend(["", "## Per-topic regressions", ""])
-    baseline_by_topic = {run.topic: run for run in baseline_runs if run.evaluation is not None}
+    baseline_by_topic = {
+        run.topic: run for run in baseline_runs if run.evaluation is not None
+    }
     score_names = list(EvaluationScores.model_fields.keys())
 
     regressions_found = False
@@ -397,7 +433,9 @@ def check_acceptance_guardrails(
     failures: list[str] = []
 
     total = len(candidate_runs)
-    succeeded = sum(r.status == "success" and r.evaluation is not None for r in candidate_runs)
+    succeeded = sum(
+        r.status == "success" and r.evaluation is not None for r in candidate_runs
+    )
     if succeeded < total:
         failures.append(
             f"Generation/evaluation success: {succeeded}/{total} "
@@ -448,21 +486,35 @@ def check_acceptance_guardrails(
 def main() -> None:
     import argparse
 
-    parser = argparse.ArgumentParser(description="Generate blog evaluation reports and guardrail checks.")
-    parser.add_argument("--baseline", type=Path, help="Path to baseline experiment directory")
-    parser.add_argument("--candidate", type=Path, help="Path to candidate experiment directory")
-    parser.add_argument("--run", type=Path, help="Path to single experiment directory to check")
+    parser = argparse.ArgumentParser(
+        description="Generate blog evaluation reports and guardrail checks."
+    )
+    parser.add_argument(
+        "--baseline", type=Path, help="Path to baseline experiment directory"
+    )
+    parser.add_argument(
+        "--candidate", type=Path, help="Path to candidate experiment directory"
+    )
+    parser.add_argument(
+        "--run", type=Path, help="Path to single experiment directory to check"
+    )
 
     args = parser.parse_args()
 
     if args.baseline and args.candidate:
-        baseline_results = json.loads((args.baseline / "results.json").read_text(encoding="utf-8"))
-        candidate_results = json.loads((args.candidate / "results.json").read_text(encoding="utf-8"))
+        baseline_results = json.loads(
+            (args.baseline / "results.json").read_text(encoding="utf-8")
+        )
+        candidate_results = json.loads(
+            (args.candidate / "results.json").read_text(encoding="utf-8")
+        )
 
         baseline_runs = [EvaluationRun.model_validate(r) for r in baseline_results]
         candidate_runs = [EvaluationRun.model_validate(r) for r in candidate_results]
 
-        comparison = build_comparison_report(baseline_runs=baseline_runs, candidate_runs=candidate_runs)
+        comparison = build_comparison_report(
+            baseline_runs=baseline_runs, candidate_runs=candidate_runs
+        )
         print(comparison)
 
         failures = check_acceptance_guardrails(candidate_runs)

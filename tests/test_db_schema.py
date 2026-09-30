@@ -1,22 +1,26 @@
 """Unit and integration tests for PostgreSQL database schema and models."""
+
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from sqlalchemy import create_engine, select
-from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session, sessionmaker
 
 from apps.api.config import get_settings
-from apps.api.db.base import Base
-from apps.api.db.models import User, Session as DbSession, Run, RunStatus, RunVisibility
+from apps.api.db.models import Run, RunStatus, RunVisibility, User
+from apps.api.db.models import Session as DbSession
 
 settings = get_settings()
+
 
 @pytest.fixture(scope="module")
 def db_engine():
     engine = create_engine(settings.DATABASE_URL)
     yield engine
     engine.dispose()
+
 
 @pytest.fixture
 def db(db_engine):
@@ -27,6 +31,7 @@ def db(db_engine):
     finally:
         session.rollback()
         session.close()
+
 
 def test_user_creation_and_unique_google_sub(db: Session):
     unique_sub = f"google-sub-{uuid.uuid4().hex}"
@@ -55,6 +60,7 @@ def test_user_creation_and_unique_google_sub(db: Session):
         db.commit()
     db.rollback()
 
+
 def test_session_token_hash_uniqueness_and_cascade(db: Session):
     user = User(
         google_sub=f"google-sub-{uuid.uuid4().hex}",
@@ -65,7 +71,7 @@ def test_session_token_hash_uniqueness_and_cascade(db: Session):
     db.refresh(user)
 
     token_hash = uuid.uuid4().hex
-    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    expires_at = datetime.now(UTC) + timedelta(days=7)
     session = DbSession(
         user_id=user.id,
         token_hash=token_hash,
@@ -95,10 +101,19 @@ def test_session_token_hash_uniqueness_and_cascade(db: Session):
     deleted_session = db.scalar(select(DbSession).where(DbSession.id == session.id))
     assert deleted_session is None
 
+
 def test_run_creation_and_vocabulary(db: Session):
     expected_vocabulary = {
-        "queued", "running", "awaiting_input", "paused", "completed",
-        "failed", "blocked", "invalid", "cancelled", "expired"
+        "queued",
+        "running",
+        "awaiting_input",
+        "paused",
+        "completed",
+        "failed",
+        "blocked",
+        "invalid",
+        "cancelled",
+        "expired",
     }
     actual_vocabulary = {status.value for status in RunStatus}
     assert actual_vocabulary == expected_vocabulary
@@ -169,4 +184,3 @@ def test_run_event_creation_and_sequence_uniqueness(db: Session):
     with pytest.raises(IntegrityError):
         db.commit()
     db.rollback()
-

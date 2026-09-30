@@ -252,9 +252,7 @@ def verify_citations(
     """
 
     evidence_by_id = {item.id: item for item in evidence}
-    global_allowed_urls = {
-        normalize_url(item.url): item for item in evidence
-    }
+    global_allowed_urls = {normalize_url(item.url): item for item in evidence}
 
     headings = get_headings(markdown)
     h2_headings = [h.text.strip() for h in headings if h.level == 2]

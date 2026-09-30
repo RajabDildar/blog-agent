@@ -144,7 +144,9 @@ def editor_node(
     )
 
     deterministic_task_ids = {
-        issue.task_id for issue in citation_issues if issue.task_id is not None and issue.task_id in planned_ids
+        issue.task_id
+        for issue in citation_issues
+        if issue.task_id is not None and issue.task_id in planned_ids
     }
 
     review.sections_to_revise = sorted(

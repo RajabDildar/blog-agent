@@ -73,11 +73,7 @@ class TestNormalizeFootnoteDefinitions:
     """
 
     def test_inline_footnote_ref_replaced_with_link(self):
-        md = (
-            "The report[^1] found key findings.\n"
-            "\n"
-            "[^1]: https://example.com/report\n"
-        )
+        md = "The report[^1] found key findings.\n\n[^1]: https://example.com/report\n"
         result = normalize_citation_artifacts(md)
         assert "[Source](https://example.com/report)" in result
         assert "[^1]: https://example.com/report" not in result
@@ -112,11 +108,7 @@ class TestNormalizeFootnoteDefinitions:
         assert "[^b]:" not in result
 
     def test_footnote_with_text_before_url_uses_first_url(self):
-        md = (
-            "Claim[^1].\n"
-            "\n"
-            "[^1]: Author, Title, 2026. https://example.com/paper\n"
-        )
+        md = "Claim[^1].\n\n[^1]: Author, Title, 2026. https://example.com/paper\n"
         result = normalize_citation_artifacts(md)
         assert "[Source](https://example.com/paper)" in result
 
@@ -164,11 +156,7 @@ class TestIntegrationWithRepairSectionStructure:
         assert "https://example.com/report" in urls
 
     def test_footnote_survives_full_repair_and_is_extractable(self):
-        md = (
-            "The study[^1] found this.\n"
-            "\n"
-            "[^1]: https://study.example.com\n"
-        )
+        md = "The study[^1] found this.\n\n[^1]: https://study.example.com\n"
         repaired = repair_section_structure(md, expected_title="Results")
         links = extract_markdown_links(f"## Results\n\n{repaired}")
         urls = [lnk.url for lnk in links]

@@ -1,14 +1,15 @@
 """PostgreSQL implementation of the ArticleRepository protocol."""
+
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
+
 from sqlalchemy import select
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import sessionmaker
 
 from apps.api.db.models import Run
 from apps.api.services.diagnostics_sink import WorkerSessionLocal
-from blog_agent.services.protocols import ArticleRepository
 
 logger = logging.getLogger("blog_agent.article_repository")
 
@@ -16,7 +17,7 @@ logger = logging.getLogger("blog_agent.article_repository")
 class PostgresArticleRepository:
     """Persists and retrieves article content and asset manifests in PostgreSQL."""
 
-    def __init__(self, session_factory: Optional[sessionmaker] = None):
+    def __init__(self, session_factory: sessionmaker | None = None):
         self.session_factory = session_factory or WorkerSessionLocal
 
     def save_article(
@@ -26,7 +27,7 @@ class PostgresArticleRepository:
         title: str,
         markdown: str,
         excerpt: str,
-        assets: List[Dict[str, Any]],
+        assets: list[dict[str, Any]],
     ) -> None:
         """
         Durably stores final article content and asset manifest on the run row.
@@ -46,7 +47,7 @@ class PostgresArticleRepository:
             session.commit()
             logger.info(f"Article for run {run_id} saved to PostgreSQL successfully.")
 
-    def get_article(self, run_id: str) -> Optional[Dict[str, Any]]:
+    def get_article(self, run_id: str) -> dict[str, Any] | None:
         with self.session_factory() as session:
             run = session.scalar(select(Run).where(Run.id == run_id))
             if not run or not run.article_markdown:

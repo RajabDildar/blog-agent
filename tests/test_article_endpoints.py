@@ -1,16 +1,17 @@
 """Integration tests for GET /articles/{run_id} and GET /articles/{run_id}/assets/{filename} endpoints."""
+
+from datetime import UTC, datetime
+
 import pytest
-from datetime import datetime, timezone
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from apps.api.config import get_settings
-from apps.api.main import app
-from apps.api.dependencies import get_db
-from apps.api.db.base import Base
-from apps.api.db.models import User, Run, RunStatus, RunVisibility
 from apps.api.auth.sessions import create_session
+from apps.api.config import get_settings
+from apps.api.db.models import Run, RunStatus, RunVisibility, User
+from apps.api.dependencies import get_db
+from apps.api.main import app
 
 settings = get_settings()
 
@@ -36,11 +37,19 @@ def setup_db():
     app.dependency_overrides[get_db] = override_get_db
     client.cookies.clear()
     with engine.begin() as conn:
-        conn.execute(text("DELETE FROM run_events; DELETE FROM runs; DELETE FROM sessions; DELETE FROM users;"))
+        conn.execute(
+            text(
+                "DELETE FROM run_events; DELETE FROM runs; DELETE FROM sessions; DELETE FROM users;"
+            )
+        )
     yield
     client.cookies.clear()
     with engine.begin() as conn:
-        conn.execute(text("DELETE FROM run_events; DELETE FROM runs; DELETE FROM sessions; DELETE FROM users;"))
+        conn.execute(
+            text(
+                "DELETE FROM run_events; DELETE FROM runs; DELETE FROM sessions; DELETE FROM users;"
+            )
+        )
     app.dependency_overrides.pop(get_db, None)
 
 
@@ -55,7 +64,7 @@ def test_get_article_public_completed():
             article_title="RAG Systems Guide",
             article_markdown="# RAG Systems Guide\n\nDetailed content here.",
             article_excerpt="Detailed content here.",
-            completed_at=datetime.now(timezone.utc),
+            completed_at=datetime.now(UTC),
         )
         db.add(run)
         db.commit()
@@ -137,7 +146,9 @@ def test_get_article_asset_public(monkeypatch):
         db.add(run)
         db.commit()
 
-    monkeypatch.setattr("apps.api.routers.articles.is_cloudinary_configured", lambda: True)
+    monkeypatch.setattr(
+        "apps.api.routers.articles.is_cloudinary_configured", lambda: True
+    )
     monkeypatch.setattr(
         "apps.api.routers.articles.generate_signed_image_url",
         lambda pid: f"https://res.cloudinary.com/signed/{pid}",

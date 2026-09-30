@@ -1,12 +1,16 @@
 """Pydantic schemas for runs, gallery, and visibility mutations."""
+
 from datetime import datetime
-from typing import Optional, Any, List
-from pydantic import BaseModel, Field, ConfigDict
-from apps.api.db.models import RunStatus, RunVisibility
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from apps.api.db.models import RunVisibility
 
 
 class RunCreateRequest(BaseModel):
     """Initial article request submitted from the frontend composer."""
+
     input: str = Field(
         ...,
         min_length=1,
@@ -17,115 +21,122 @@ class RunCreateRequest(BaseModel):
 
 class RunResponse(BaseModel):
     """Detailed response for a single run."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: str
-    user_id: Optional[str] = None
+    user_id: str | None = None
     # anonymous_session_id is intentionally excluded: it is an internal tracking
     # identifier that must not be exposed to API clients.
     original_input: str
-    topic: Optional[str] = None
+    topic: str | None = None
     status: str
-    mode: Optional[str] = None
+    mode: str | None = None
     visibility: str
     featured: bool
-    pending_interaction: Optional[Any] = None
+    pending_interaction: Any | None = None
     created_at: datetime
     updated_at: datetime
-    generation_started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    expires_at: Optional[datetime] = None
-    resume_after: Optional[datetime] = None
-    diagnostics_summary: Optional[Any] = None
-    article_markdown: Optional[str] = None
-    article_assets: Optional[Any] = None
-    article_title: Optional[str] = None
-    article_excerpt: Optional[str] = None
-    error_code: Optional[str] = None
-    error_message: Optional[str] = None
+    generation_started_at: datetime | None = None
+    completed_at: datetime | None = None
+    expires_at: datetime | None = None
+    resume_after: datetime | None = None
+    diagnostics_summary: Any | None = None
+    article_markdown: str | None = None
+    article_assets: Any | None = None
+    article_title: str | None = None
+    article_excerpt: str | None = None
+    error_code: str | None = None
+    error_message: str | None = None
     can_resume: bool = False
-    safe_alternatives: Optional[List[str]] = None
-    run_url: Optional[str] = None
+    safe_alternatives: list[str] | None = None
+    run_url: str | None = None
 
 
 class PublicRunResponse(BaseModel):
     """Public-safe summary of a completed run for non-owners."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: str
     status: str
-    topic: Optional[str] = None
-    article_title: Optional[str] = None
-    article_excerpt: Optional[str] = None
-    article_url: Optional[str] = None
+    topic: str | None = None
+    article_title: str | None = None
+    article_excerpt: str | None = None
+    article_url: str | None = None
     visibility: str
-    completed_at: Optional[datetime] = None
+    completed_at: datetime | None = None
 
 
 class ArticleResponse(BaseModel):
     """Detailed response for a completed technical article."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: str
-    article_title: Optional[str] = None
-    article_excerpt: Optional[str] = None
-    article_markdown: Optional[str] = None
-    topic: Optional[str] = None
-    completed_at: Optional[datetime] = None
+    article_title: str | None = None
+    article_excerpt: str | None = None
+    article_markdown: str | None = None
+    topic: str | None = None
+    completed_at: datetime | None = None
     visibility: str
     featured: bool
-    article_assets: Optional[Any] = None
-    article_url: Optional[str] = None
+    article_assets: Any | None = None
+    article_url: str | None = None
 
 
 class RunListItemResponse(BaseModel):
     """Summary item for listing user/anonymous runs."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: str
     original_input: str
-    topic: Optional[str] = None
+    topic: str | None = None
     status: str
     visibility: str
     featured: bool
     created_at: datetime
-    completed_at: Optional[datetime] = None
-    article_title: Optional[str] = None
-    run_url: Optional[str] = None
+    completed_at: datetime | None = None
+    article_title: str | None = None
+    run_url: str | None = None
 
 
 class RunVisibilityUpdateRequest(BaseModel):
     """Request payload to change run visibility."""
+
     visibility: RunVisibility
 
 
 class RunFeatureUpdateRequest(BaseModel):
     """Request payload for admin to feature/unfeature an article."""
+
     featured: bool
 
 
 class GalleryItemResponse(BaseModel):
     """Public gallery technical article summary."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: str
-    article_title: Optional[str] = None
-    article_excerpt: Optional[str] = None
-    topic: Optional[str] = None
+    article_title: str | None = None
+    article_excerpt: str | None = None
+    topic: str | None = None
     featured: bool
-    completed_at: Optional[datetime] = None
-    article_url: Optional[str] = None
+    completed_at: datetime | None = None
+    article_url: str | None = None
 
 
 class HumanInputRequest(BaseModel):
     """User response to clarification or confirmation interrupt."""
+
     action: str = Field(
         ...,
         description="Action type: select_option | custom_input | proceed | cancel",
     )
-    value: Optional[str] = Field(
+    value: str | None = Field(
         None,
         max_length=1000,
         description="Selected option value or custom input string",
     )
-

@@ -40,22 +40,26 @@ def support_strength_score(
     }[support_strength]
 
 
-OFFICIAL_PRIMARY_SOURCE_TYPES: frozenset[SourceType] = frozenset({
-    "official_documentation",
-    "government_source",
-    "academic_paper",
-    "official_company_announcement",
-    "standards_document",
-})
+OFFICIAL_PRIMARY_SOURCE_TYPES: frozenset[SourceType] = frozenset(
+    {
+        "official_documentation",
+        "government_source",
+        "academic_paper",
+        "official_company_announcement",
+        "standards_document",
+    }
+)
 
 
-EXEMPT_AUTHORITATIVE_SOURCE_TYPES: frozenset[SourceType] = frozenset({
-    "official_documentation",
-    "standards_document",
-    "academic_paper",
-    "github_repository",
-    "reputable_industry_source",
-})
+EXEMPT_AUTHORITATIVE_SOURCE_TYPES: frozenset[SourceType] = frozenset(
+    {
+        "official_documentation",
+        "standards_document",
+        "academic_paper",
+        "github_repository",
+        "reputable_industry_source",
+    }
+)
 
 
 class ExtractedResearchEvidence(BaseModel):
@@ -348,15 +352,22 @@ class IntentAnalysis(BaseModel):
     clarification_options: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def validate_outcome_fields(self) -> "IntentAnalysis":
+    def validate_outcome_fields(self) -> IntentAnalysis:
         if self.outcome == "accepted":
             if not self.normalized_topic or not self.normalized_topic.strip():
                 raise ValueError("accepted outcome requires non-empty normalized_topic")
         elif self.outcome == "needs_clarification":
-            if not self.clarification_question or not self.clarification_question.strip():
-                raise ValueError("needs_clarification outcome requires clarification_question")
+            if (
+                not self.clarification_question
+                or not self.clarification_question.strip()
+            ):
+                raise ValueError(
+                    "needs_clarification outcome requires clarification_question"
+                )
             if len(self.clarification_options) != 3:
-                raise ValueError("needs_clarification outcome requires exactly 3 clarification_options")
+                raise ValueError(
+                    "needs_clarification outcome requires exactly 3 clarification_options"
+                )
             stripped_options = [opt.strip() for opt in self.clarification_options]
             if any(not opt for opt in stripped_options):
                 raise ValueError("clarification_options must be non-empty strings")
@@ -385,13 +396,13 @@ class IntentHumanResponse(BaseModel):
     value: str = ""
 
     @model_validator(mode="after")
-    def validate_action(self) -> "IntentHumanResponse":
-        if self.action in ("select_option", "custom_input"):
-            if not self.value or not self.value.strip():
-                raise ValueError(f"{self.action} requires non-empty value")
+    def validate_action(self) -> IntentHumanResponse:
+        if self.action in ("select_option", "custom_input") and (
+            not self.value or not self.value.strip()
+        ):
+            raise ValueError(f"{self.action} requires non-empty value")
         return self
 
 
 class ProposedTopicAnalysis(BaseModel):
     proposed_topic: str = Field(..., min_length=3)
-

@@ -1,21 +1,22 @@
 """Authentication router providing Google login, session cookies, and logout."""
+
 from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from apps.api.config import get_settings
-from apps.api.dependencies import get_db, get_current_user, verify_csrf
-from apps.api.db.models import User
-from apps.api.schemas.auth import GoogleAuthRequest, UserResponse
-from apps.api.schemas.errors import error_response
-from apps.api.auth.google import verify_google_credential, GoogleAuthError
+from apps.api.auth.csrf import clear_csrf_cookie, generate_csrf_token, set_csrf_cookie
+from apps.api.auth.google import GoogleAuthError, verify_google_credential
 from apps.api.auth.sessions import (
+    clear_session_cookie,
     create_session,
     revoke_session,
     set_session_cookie,
-    clear_session_cookie,
 )
-from apps.api.auth.csrf import generate_csrf_token, set_csrf_cookie, clear_csrf_cookie
+from apps.api.config import get_settings
+from apps.api.db.models import User
+from apps.api.dependencies import get_current_user, get_db, verify_csrf
+from apps.api.schemas.auth import GoogleAuthRequest, UserResponse
+from apps.api.schemas.errors import error_response
 from apps.api.services.claim_service import claim_anonymous_runs
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -80,7 +81,7 @@ def login_with_google(
         claim_anonymous_runs(db, anonymous_session_id=anon_cookie, user_id=user.id)
 
     # Create opaque session
-    session_row, raw_token = create_session(db, user_id=user.id)
+    _session_row, raw_token = create_session(db, user_id=user.id)
     set_session_cookie(response, raw_token)
 
     # Rotate/issue CSRF cookie

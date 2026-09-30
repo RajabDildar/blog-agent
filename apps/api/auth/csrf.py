@@ -1,9 +1,11 @@
 """Double-submit-cookie CSRF protection and Origin verification."""
+
 import hmac
 import secrets
 from urllib.parse import urlparse
-from typing import List, Optional
-from fastapi import Request, Response, HTTPException, status
+
+from fastapi import HTTPException, Request, Response, status
+
 from apps.api.config import get_settings
 
 settings = get_settings()
@@ -19,7 +21,7 @@ def generate_csrf_token() -> str:
 def set_csrf_cookie(
     response: Response,
     token: str,
-    secure: Optional[bool] = None,
+    secure: bool | None = None,
 ) -> None:
     """
     Sets the non-HttpOnly CSRF cookie so the frontend SPA can read it
@@ -48,7 +50,7 @@ def clear_csrf_cookie(response: Response) -> None:
     )
 
 
-def validate_origin(request: Request, allowed_origins: List[str]) -> bool:
+def validate_origin(request: Request, allowed_origins: list[str]) -> bool:
     """
     Validates request Origin against configured allowed origins.
     Returns True if origin is valid or permitted.

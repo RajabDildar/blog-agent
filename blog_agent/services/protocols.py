@@ -1,5 +1,6 @@
 """Core service protocols for article repository and image storage abstractions."""
-from typing import Protocol, runtime_checkable, Any, Optional, Dict, List
+
+from typing import Any, Protocol, runtime_checkable
 
 
 @runtime_checkable
@@ -13,12 +14,12 @@ class ArticleRepository(Protocol):
         title: str,
         markdown: str,
         excerpt: str,
-        assets: List[Dict[str, Any]],
+        assets: list[dict[str, Any]],
     ) -> None:
         """Persists final article Markdown, excerpt, and asset manifest."""
         ...
 
-    def get_article(self, run_id: str) -> Optional[Dict[str, Any]]:
+    def get_article(self, run_id: str) -> dict[str, Any] | None:
         """Retrieves article content and metadata for run_id."""
         ...
 
@@ -33,15 +34,15 @@ class ImageStorage(Protocol):
         run_id: str,
         filename: str,
         image_bytes: bytes,
-        alt_text: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        alt_text: str | None = None,
+    ) -> dict[str, Any]:
         """Uploads an image binary and returns the asset manifest entry."""
         ...
 
-    def verify_image(self, asset: Dict[str, Any]) -> bool:
+    def verify_image(self, asset: dict[str, Any]) -> bool:
         """Verifies that the uploaded asset exists and is accessible."""
         ...
 
-    def delete_images(self, public_ids: List[str]) -> None:
+    def delete_images(self, public_ids: list[str]) -> None:
         """Deletes assets identified by their public IDs."""
         ...

@@ -1,19 +1,21 @@
 """End-to-end API integration tests for FastAPI routes, cookies, and authorization."""
+
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import patch
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from apps.api.main import app
 from apps.api.config import get_settings
-from apps.api.db.models import User, Run, RunStatus, RunVisibility
+from apps.api.db.models import Run, RunStatus, RunVisibility, User
+from apps.api.main import app
 from apps.api.services.run_service import create_run
-from apps.api.auth.csrf import generate_csrf_token
 
 settings = get_settings()
+
 
 @pytest.fixture(autouse=True)
 def bypass_abuse_limit():
@@ -25,11 +27,13 @@ def bypass_abuse_limit():
 def client():
     return TestClient(app, base_url="http://localhost:8000")
 
+
 @pytest.fixture(scope="module")
 def db_engine():
     engine = create_engine(settings.DATABASE_URL)
     yield engine
     engine.dispose()
+
 
 @pytest.fixture
 def db(db_engine):
@@ -115,7 +119,6 @@ def test_anonymous_run_creation_and_claim_on_login(client, db):
 
     # Verify anonymous cookie is set
     assert settings.ANONYMOUS_COOKIE_NAME in res.cookies
-    anon_cookie = res.cookies[settings.ANONYMOUS_COOKIE_NAME]
 
     # 2. Anonymous visitor can read own run
     get_res = anon_client.get(f"/runs/{run_id}")
@@ -137,7 +140,9 @@ def test_anonymous_run_creation_and_claim_on_login(client, db):
         "name": "Claiming User",
     }
     with patch("google.oauth2.id_token.verify_oauth2_token", return_value=mock_payload):
-        login_res = anon_client.post("/auth/google", json={"credential": "mock.jwt.token"})
+        login_res = anon_client.post(
+            "/auth/google", json={"credential": "mock.jwt.token"}
+        )
         assert login_res.status_code == 200
         user_id = login_res.json()["id"]
 
@@ -192,11 +197,13 @@ def test_visibility_and_feature_endpoints(client, db):
         headers={"origin": "http://localhost:5173", "x-csrf-token": csrf_reg},
     )
     assert bad_vis.status_code == 409
-    assert "Only completed runs can be made public" in bad_vis.json()["error"]["message"]
+    assert (
+        "Only completed runs can be made public" in bad_vis.json()["error"]["message"]
+    )
 
     # Mark run completed
     run.status = RunStatus.COMPLETED.value
-    run.completed_at = datetime.now(timezone.utc)
+    run.completed_at = datetime.now(UTC)
     db.commit()
 
     # Regular user makes completed run public
@@ -224,7 +231,9 @@ def test_visibility_and_feature_endpoints(client, db):
     }
     admin_client = TestClient(app, base_url="http://localhost:8000")
     with patch("google.oauth2.id_token.verify_oauth2_token", return_value=mock_admin):
-        admin_login = admin_client.post("/auth/google", json={"credential": "admin.token"})
+        admin_login = admin_client.post(
+            "/auth/google", json={"credential": "admin.token"}
+        )
         csrf_admin = admin_login.cookies[settings.CSRF_COOKIE_NAME]
 
     # Admin features the public completed run
@@ -295,7 +304,7 @@ def test_public_read_does_not_expose_owner_fields(db, client):
         diagnostics_summary={"latency_ms": 1200},
         error_message="Internal warning",
         article_assets=[{"filename": "diag.png"}],
-        completed_at=datetime.now(timezone.utc),
+        completed_at=datetime.now(UTC),
     )
     db.add(run)
     db.commit()
@@ -334,7 +343,7 @@ def test_anonymous_cannot_publish(db, client):
         topic="Rust Borrow Checker",
         status=RunStatus.COMPLETED.value,
         visibility=RunVisibility.PRIVATE.value,
-        completed_at=datetime.now(timezone.utc),
+        completed_at=datetime.now(UTC),
     )
     db.add(run)
     db.commit()
@@ -417,7 +426,9 @@ def test_error_envelope_shape(client):
         res_auth = client.post("/auth/google", json={"credential": "bad.token"})
     assert res_auth.status_code == 401
     body_auth = res_auth.json()
-    assert "error" in body_auth, f"Expected 'error' key in auth response, got: {body_auth}"
+    assert "error" in body_auth, (
+        f"Expected 'error' key in auth response, got: {body_auth}"
+    )
     assert "code" in body_auth["error"]
     assert "message" in body_auth["error"]
     assert "detail" not in body_auth
@@ -426,6 +437,7 @@ def test_error_envelope_shape(client):
     res_gallery = client.get("/gallery?page_size=-1")
     assert res_gallery.status_code == 422
     body_gallery = res_gallery.json()
-    assert "error" in body_gallery, f"Expected 'error' key in gallery response, got: {body_gallery}"
+    assert "error" in body_gallery, (
+        f"Expected 'error' key in gallery response, got: {body_gallery}"
+    )
     assert "detail" not in body_gallery
-

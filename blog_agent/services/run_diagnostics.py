@@ -66,9 +66,7 @@ class RunDiagnostics:
         sink: DiagnosticsSink | None = None,
     ):
         self.run_id = run_id
-        self.original_input = (
-            original_input if original_input is not None else topic
-        )
+        self.original_input = original_input if original_input is not None else topic
         self.topic = topic
         self.sink: DiagnosticsSink = (
             sink if sink is not None else FileDiagnosticsSink(run_id)

@@ -239,7 +239,9 @@ def test_revision_sends_respect_sections_to_revise() -> None:
     assert [item["id"] for item in sends[1].arg["evidence"]] == [2]
 
 
-def test_revision_sends_preserve_plan_order_even_if_sections_to_revise_out_of_order() -> None:
+def test_revision_sends_preserve_plan_order_even_if_sections_to_revise_out_of_order() -> (
+    None
+):
     plan = make_plan(
         make_task(
             task_id=1,

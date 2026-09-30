@@ -761,7 +761,9 @@ def test_orchestrator_plans_closed_book_without_evidence(monkeypatch) -> None:
     assert result["plan"] is not None
 
 
-def test_orchestrator_rejects_empty_research_ownership_from_planner(monkeypatch) -> None:
+def test_orchestrator_rejects_empty_research_ownership_from_planner(
+    monkeypatch,
+) -> None:
     class FakePlanner:
         def invoke(self, messages):
             return make_plan(
@@ -818,4 +820,3 @@ def test_orchestrator_rejects_contract_violating_plan_from_planner(monkeypatch) 
         match=("duplicate task title: 'overview'"),
     ):
         orchestrator_node(state)
-

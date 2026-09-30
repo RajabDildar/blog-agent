@@ -1,10 +1,10 @@
-from blog_agent.schemas.models import IntentAnalysis
 import logging
+
 from langgraph.types import interrupt
 
 from blog_agent.config.settings import MAX_USER_INPUT_CHARS
 from blog_agent.schemas.interaction_types import InteractionType
-from blog_agent.schemas.models import IntentHumanResponse
+from blog_agent.schemas.models import IntentAnalysis, IntentHumanResponse
 from blog_agent.schemas.state import State
 from blog_agent.services.intent_analysis import (
     IntentAnalysisUnavailable,
@@ -72,7 +72,7 @@ def intent_gateway_node(state: State) -> dict:
         try:
             analysis = analyze_intent(cleaned_input)
             _intent_cache[cache_key] = analysis
-        except IntentAnalysisUnavailable as exc:
+        except IntentAnalysisUnavailable:
             msg = "Unable to understand request. Please retry."
             if diagnostics is not None:
                 diagnostics.record_input_invalid(
@@ -143,7 +143,7 @@ def intent_gateway_node(state: State) -> dict:
     elif isinstance(raw_response, IntentHumanResponse):
         human_resp = raw_response
     else:
-        raise ValueError(f"Invalid clarification response type: {type(raw_response)}")
+        raise TypeError(f"Invalid clarification response type: {type(raw_response)}")
 
     if human_resp.action == "cancel":
         if diagnostics is not None:
@@ -277,7 +277,7 @@ def intent_gateway_node(state: State) -> dict:
     elif isinstance(raw_conf_response, IntentHumanResponse):
         human_conf = raw_conf_response
     else:
-        raise ValueError(
+        raise TypeError(
             f"Invalid confirmation response type: {type(raw_conf_response)}"
         )
 

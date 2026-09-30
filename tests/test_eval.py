@@ -4,6 +4,10 @@ from types import SimpleNamespace
 
 import pytest
 
+from blog_agent.services.rate_limits import (
+    RateLimitInfo,
+    RateLimitRetryExhausted,
+)
 from eval.models import (
     EvaluationMetrics,
     EvaluationResult,
@@ -22,10 +26,6 @@ from eval.run_eval import (
     run_evaluation,
 )
 from eval.score import extract_evidence_metrics, extract_metrics
-from blog_agent.services.rate_limits import (
-    RateLimitInfo,
-    RateLimitRetryExhausted,
-)
 
 
 def test_extract_metrics_from_diagnostics():
@@ -657,7 +657,9 @@ def test_build_report_includes_revision_rate_and_judge_calls():
         revision_count=1,
         editorial_reviews=1,
     )
-    run = run.model_copy(update={"metrics": run.metrics.model_copy(update={"judge_calls": 1})})
+    run = run.model_copy(
+        update={"metrics": run.metrics.model_copy(update={"judge_calls": 1})}
+    )
     report = build_report([run])
 
     assert "Editorial reviews: 1" in report
@@ -685,10 +687,14 @@ def test_build_comparison_report_includes_operational_deltas():
     LLM calls, revisions, retries, and generation time alongside score deltas.
     """
     baseline = [
-        make_run_with_metrics(topic="AI", overall_quality=9, llm_calls=10, revision_count=0)
+        make_run_with_metrics(
+            topic="AI", overall_quality=9, llm_calls=10, revision_count=0
+        )
     ]
     candidate = [
-        make_run_with_metrics(topic="AI", overall_quality=8, llm_calls=12, revision_count=1)
+        make_run_with_metrics(
+            topic="AI", overall_quality=8, llm_calls=12, revision_count=1
+        )
     ]
     report = build_comparison_report(baseline_runs=baseline, candidate_runs=candidate)
 
@@ -732,23 +738,37 @@ def test_build_comparison_report_per_topic_all_score_dimensions():
         topic="Citations topic",
         run_id="b-run",
         status="success",
-        evaluation=EvaluationResult(scores=baseline_scores, strengths=[], weaknesses=[], summary="ok"),
+        evaluation=EvaluationResult(
+            scores=baseline_scores, strengths=[], weaknesses=[], summary="ok"
+        ),
         metrics=EvaluationMetrics(
-            llm_calls=5, research_calls=1, image_calls=2,
-            revision_count=0, generation_time_seconds=10.0, retries=0,
+            llm_calls=5,
+            research_calls=1,
+            image_calls=2,
+            revision_count=0,
+            generation_time_seconds=10.0,
+            retries=0,
         ),
     )
     candidate_run = EvaluationRun(
         topic="Citations topic",
         run_id="c-run",
         status="success",
-        evaluation=EvaluationResult(scores=candidate_scores, strengths=[], weaknesses=[], summary="ok"),
+        evaluation=EvaluationResult(
+            scores=candidate_scores, strengths=[], weaknesses=[], summary="ok"
+        ),
         metrics=EvaluationMetrics(
-            llm_calls=5, research_calls=1, image_calls=2,
-            revision_count=0, generation_time_seconds=10.0, retries=0,
+            llm_calls=5,
+            research_calls=1,
+            image_calls=2,
+            revision_count=0,
+            generation_time_seconds=10.0,
+            retries=0,
         ),
     )
-    report = build_comparison_report(baseline_runs=[baseline_run], candidate_runs=[candidate_run])
+    report = build_comparison_report(
+        baseline_runs=[baseline_run], candidate_runs=[candidate_run]
+    )
 
     assert "Per-topic regressions" in report
     # The citation regression should appear (9 -> 7) even though overall_quality didn't drop.
@@ -800,9 +820,7 @@ def test_check_acceptance_guardrails_passes_on_good_run():
 
 def test_check_acceptance_guardrails_fails_on_low_overall_quality():
     """Guardrail fails when overall quality average drops below 9.00."""
-    runs = [
-        make_run_with_metrics(topic="T1", overall_quality=8, llm_calls=10)
-    ]
+    runs = [make_run_with_metrics(topic="T1", overall_quality=8, llm_calls=10)]
     # Force citations and research_quality to pass; only overall_quality is low.
     runs[0].evaluation.scores.citations = 9
     runs[0].evaluation.scores.research_quality = 9
@@ -829,9 +847,7 @@ def test_check_acceptance_guardrails_fails_on_high_severity_citation_issues():
 
 def test_check_acceptance_guardrails_fails_on_excess_llm_calls():
     """Guardrail fails when average LLM calls exceed the rejected candidate's 12.63."""
-    runs = [
-        make_run_with_metrics(topic="T1", overall_quality=9, llm_calls=15)
-    ]
+    runs = [make_run_with_metrics(topic="T1", overall_quality=9, llm_calls=15)]
     runs[0].evaluation.scores.citations = 9
     runs[0].evaluation.scores.research_quality = 9
 

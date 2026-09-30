@@ -151,6 +151,7 @@ def run_child(
         cwd=Path.cwd(),
         capture_output=True,
         text=True,
+        check=False,
     )
 
 

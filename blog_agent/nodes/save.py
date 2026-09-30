@@ -1,3 +1,5 @@
+from contextlib import suppress
+
 from blog_agent.schemas.state import State
 from blog_agent.services.storage import publish_blog
 
@@ -24,13 +26,12 @@ def save_node(
         raise RuntimeError("Refusing to save empty Markdown.")
 
     context = {}
-    try:
+    with suppress(Exception):
         from langgraph.runtime import get_runtime
+
         runtime = get_runtime()
         if runtime and runtime.context:
             context = runtime.context
-    except Exception:
-        pass
 
     article_repo = context.get("article_repository")
     image_storage = context.get("image_storage")

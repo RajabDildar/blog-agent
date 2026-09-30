@@ -1,15 +1,16 @@
 """Integration tests for GET /gallery and GET /featured endpoints with pagination and sorting."""
+
+from datetime import UTC, datetime, timedelta
+
 import pytest
-from datetime import datetime, timezone, timedelta
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from apps.api.config import get_settings
-from apps.api.main import app
-from apps.api.dependencies import get_db
-from apps.api.db.base import Base
 from apps.api.db.models import Run, RunStatus, RunVisibility
+from apps.api.dependencies import get_db
+from apps.api.main import app
 
 settings = get_settings()
 
@@ -34,16 +35,24 @@ client = TestClient(app)
 def setup_db():
     app.dependency_overrides[get_db] = override_get_db
     with engine.begin() as conn:
-        conn.execute(text("DELETE FROM run_events; DELETE FROM runs; DELETE FROM sessions; DELETE FROM users;"))
+        conn.execute(
+            text(
+                "DELETE FROM run_events; DELETE FROM runs; DELETE FROM sessions; DELETE FROM users;"
+            )
+        )
     yield
     with engine.begin() as conn:
-        conn.execute(text("DELETE FROM run_events; DELETE FROM runs; DELETE FROM sessions; DELETE FROM users;"))
+        conn.execute(
+            text(
+                "DELETE FROM run_events; DELETE FROM runs; DELETE FROM sessions; DELETE FROM users;"
+            )
+        )
     app.dependency_overrides.pop(get_db, None)
 
 
 def test_gallery_filtering_and_pagination():
     with TestingSessionLocal() as db:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # 1. Public completed article 1
         r1 = Run(
@@ -98,7 +107,7 @@ def test_gallery_filtering_and_pagination():
 
 def test_featured_articles():
     with TestingSessionLocal() as db:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         r1 = Run(
             id="feat-1",

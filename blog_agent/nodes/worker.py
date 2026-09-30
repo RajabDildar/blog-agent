@@ -37,11 +37,10 @@ def _citation_requirement_block(
             "- Do NOT add external citation links.\n"
         )
 
-    url_lines = "\n".join(
-        f"  * {e.url}  ({e.source_title})"
-        for e in evidence
-        if e.url
-    ) or "  (no evidence assigned)"
+    url_lines = (
+        "\n".join(f"  * {e.url}  ({e.source_title})" for e in evidence if e.url)
+        or "  (no evidence assigned)"
+    )
 
     return (
         "CITATION REQUIREMENTS (MANDATORY):\n"
@@ -113,8 +112,7 @@ def worker_node(payload: dict) -> dict:
                     f"Current section:\n"
                     f"{task.model_dump()}\n\n"
                     f"Evidence:\n"
-                    f"{evidence_text}\n\n"
-                    + _citation_requirement_block(task, evidence)
+                    f"{evidence_text}\n\n" + _citation_requirement_block(task, evidence)
                 )
             ),
         ],
@@ -135,7 +133,7 @@ def worker_node(payload: dict) -> dict:
             scope="section",
             expected_title=task.title,
         ),
-            diagnostics=diagnostics,
+        diagnostics=diagnostics,
     )
 
     if gate.errors:

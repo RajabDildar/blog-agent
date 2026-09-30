@@ -1,14 +1,16 @@
 """Phase 4 tests: Quota service - daily generation limits and abuse protection using PostgreSQL."""
+
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
 from apps.api.config import get_settings
-from apps.api.db.models import Run, RunStatus, User, RateLimitBucket
+from apps.api.db.models import RateLimitBucket, Run, RunStatus, User
 
 settings = get_settings()
 
@@ -35,14 +37,15 @@ def db(db_engine):
 # Quota service import smoke test
 # ---------------------------------------------------------------------------
 
+
 def test_quota_service_imports_without_error():
     """All public quota service symbols must be importable."""
     from apps.api.services.quota_service import (  # noqa: F401
+        QuotaExceededError,
         check_and_increment_abuse_limit,
         check_pre_generation_quota,
-        reserve_generation_quota_atomic,
         hash_identifier,
-        QuotaExceededError,
+        reserve_generation_quota_atomic,
     )
 
 
@@ -50,28 +53,38 @@ def test_quota_service_imports_without_error():
 # check_and_increment_abuse_limit tests (PostgreSQL-backed)
 # ---------------------------------------------------------------------------
 
+
 def test_abuse_limit_allows_first_request(db):
     """check_and_increment_abuse_limit must create a bucket row and pass for a fresh IP."""
-    from apps.api.services.quota_service import check_and_increment_abuse_limit, hash_identifier
+    from apps.api.services.quota_service import (
+        check_and_increment_abuse_limit,
+        hash_identifier,
+    )
 
     test_ip = f"10.0.{uuid.uuid4().int % 250}.{uuid.uuid4().int % 250}"
     check_and_increment_abuse_limit(client_ip=test_ip, db=db)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     window_hour = now.strftime("%Y%m%d%H")
     expected_key = hash_identifier(f"abuse:ip_intent_hour:{test_ip}:{window_hour}")
 
-    bucket = db.scalar(select(RateLimitBucket).where(RateLimitBucket.bucket_key == expected_key))
+    bucket = db.scalar(
+        select(RateLimitBucket).where(RateLimitBucket.bucket_key == expected_key)
+    )
     assert bucket is not None
     assert bucket.count == 1
 
 
 def test_abuse_limit_raises_when_limit_exceeded(db):
     """check_and_increment_abuse_limit must raise QuotaExceededError when counter exceeds limit."""
-    from apps.api.services.quota_service import check_and_increment_abuse_limit, hash_identifier, QuotaExceededError
+    from apps.api.services.quota_service import (
+        QuotaExceededError,
+        check_and_increment_abuse_limit,
+        hash_identifier,
+    )
 
     test_ip = f"10.1.{uuid.uuid4().int % 250}.{uuid.uuid4().int % 250}"
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     window_hour = now.strftime("%Y%m%d%H")
     expected_key = hash_identifier(f"abuse:ip_intent_hour:{test_ip}:{window_hour}")
 
@@ -93,7 +106,6 @@ def test_abuse_limit_skips_when_ip_is_none(db):
     from apps.api.services.quota_service import check_and_increment_abuse_limit
 
     # Should not raise, should not insert anything
-    initial_count = db.scalar(select(RateLimitBucket.id))
     check_and_increment_abuse_limit(client_ip=None, db=db)
 
 
@@ -114,10 +126,13 @@ def test_abuse_limit_hashes_ip_and_stores_no_raw_ip(db):
 # check_pre_generation_quota tests
 # ---------------------------------------------------------------------------
 
-def _make_completed_runs_for_quota(db, *, count: int, anon_id: str | None = None, user_id: str | None = None):
+
+def _make_completed_runs_for_quota(
+    db, *, count: int, anon_id: str | None = None, user_id: str | None = None
+):
     """Helper: insert runs with generation_started_at today."""
-    now = datetime.now(timezone.utc)
-    today = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
+    now = datetime.now(UTC)
+    today = datetime(now.year, now.month, now.day, tzinfo=UTC)
     for _ in range(count):
         run = Run(
             original_input="Quota test",
@@ -146,7 +161,10 @@ def test_pre_generation_quota_allows_anonymous_with_no_prior_runs(db):
 
 def test_pre_generation_quota_blocks_anonymous_after_first_run(db):
     """Anonymous user with one prior generated run must be blocked."""
-    from apps.api.services.quota_service import check_pre_generation_quota, QuotaExceededError
+    from apps.api.services.quota_service import (
+        QuotaExceededError,
+        check_pre_generation_quota,
+    )
 
     anon_id = "one-run-anon-" + uuid.uuid4().hex[:8]
     _make_completed_runs_for_quota(db, count=1, anon_id=anon_id)
@@ -200,7 +218,7 @@ def test_pre_generation_quota_allows_authenticated_under_daily_limit(db):
         run = Run(
             original_input="Auth run",
             status=RunStatus.COMPLETED.value,
-            generation_started_at=datetime.now(timezone.utc),
+            generation_started_at=datetime.now(UTC),
             user_id=user.id,
         )
         db.add(run)
@@ -212,7 +230,10 @@ def test_pre_generation_quota_allows_authenticated_under_daily_limit(db):
 
 def test_pre_generation_quota_blocks_authenticated_at_daily_limit(db):
     """Authenticated user at their daily limit must be blocked."""
-    from apps.api.services.quota_service import check_pre_generation_quota, QuotaExceededError
+    from apps.api.services.quota_service import (
+        QuotaExceededError,
+        check_pre_generation_quota,
+    )
 
     user = User(
         google_sub=f"sub-quota-max-{uuid.uuid4().hex}",
@@ -227,7 +248,7 @@ def test_pre_generation_quota_blocks_authenticated_at_daily_limit(db):
         run = Run(
             original_input="Limit run",
             status=RunStatus.COMPLETED.value,
-            generation_started_at=datetime.now(timezone.utc),
+            generation_started_at=datetime.now(UTC),
             user_id=user.id,
         )
         db.add(run)
@@ -240,6 +261,7 @@ def test_pre_generation_quota_blocks_authenticated_at_daily_limit(db):
 # ---------------------------------------------------------------------------
 # reserve_generation_quota_atomic tests
 # ---------------------------------------------------------------------------
+
 
 def test_reserve_quota_sets_generation_started_at(db):
     """reserve_generation_quota_atomic must set generation_started_at for a new run."""
@@ -270,7 +292,7 @@ def test_reserve_quota_is_idempotent(db):
     run = Run(
         original_input="Idempotent reserve test",
         status=RunStatus.RUNNING.value,
-        generation_started_at=datetime.now(timezone.utc),  # Already set
+        generation_started_at=datetime.now(UTC),  # Already set
     )
     db.add(run)
     db.commit()
@@ -289,7 +311,7 @@ def test_reserve_quota_blocks_anonymous_second_run(db):
     existing = Run(
         original_input="First run",
         status=RunStatus.COMPLETED.value,
-        generation_started_at=datetime.now(timezone.utc),
+        generation_started_at=datetime.now(UTC),
         anonymous_session_id=anon_id,
     )
     db.add(existing)

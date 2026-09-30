@@ -80,17 +80,19 @@ def create_checkpointer(
             backend = "sqlite"
         else:
             from blog_agent.config.settings import CHECKPOINT_BACKEND
+
             backend = CHECKPOINT_BACKEND
 
     serde = _get_serde()
 
     if backend == "postgres":
         from langgraph.checkpoint.postgres import PostgresSaver
-        from psycopg_pool import ConnectionPool
         from psycopg.rows import dict_row
+        from psycopg_pool import ConnectionPool
 
         if database_url is None:
             from blog_agent.config.settings import DATABASE_URL
+
             database_url = DATABASE_URL
 
         clean_url = database_url.replace("postgresql+psycopg://", "postgresql://")
@@ -98,7 +100,11 @@ def create_checkpointer(
             conninfo=clean_url,
             max_size=20,
             open=True,
-            kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
+            kwargs={
+                "autocommit": True,
+                "prepare_threshold": 0,
+                "row_factory": dict_row,
+            },
         )
         saver = PostgresSaver(pool, serde=serde)
         try:
@@ -116,6 +122,7 @@ def create_checkpointer(
     # SQLite fallback / default
     if path is None:
         from blog_agent.config.settings import CHECKPOINT_SQLITE_PATH
+
         path = CHECKPOINT_SQLITE_PATH
 
     checkpoint_path = Path(path)

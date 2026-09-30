@@ -1,21 +1,21 @@
 """Unit tests for CSRF validation and Origin verification."""
-import pytest
-from fastapi import Request, HTTPException
-from starlette.datastructures import Headers
 
-from apps.api.auth.csrf import validate_csrf, generate_csrf_token
+import pytest
+from fastapi import HTTPException, Request
+
+from apps.api.auth.csrf import generate_csrf_token, validate_csrf
 
 
 def make_request(
     method: str = "POST",
-    headers: dict = None,
-    cookies: dict = None,
+    headers: dict | None = None,
+    cookies: dict | None = None,
 ) -> Request:
     raw_headers = []
     if headers:
         for k, v in headers.items():
             raw_headers.append((k.lower().encode("latin-1"), v.encode("latin-1")))
-    
+
     scope = {
         "type": "http",
         "method": method,

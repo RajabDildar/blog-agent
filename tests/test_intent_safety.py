@@ -1,4 +1,5 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
+
 import pytest
 
 from blog_agent.nodes.intent_gateway import intent_gateway_node
@@ -81,7 +82,7 @@ def test_contextual_safety_blocks_malicious_and_harmful_requests(
     mock_analysis = IntentAnalysis(
         outcome="blocked",
         block_category=block_category,
-        user_message=f"I cannot generate this content. Try defensive security instead.",
+        user_message="I cannot generate this content. Try defensive security instead.",
     )
     state: State = {
         "run_id": "test-blocked-safety",

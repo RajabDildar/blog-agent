@@ -1,4 +1,5 @@
 """Interaction type definitions for human-in-the-loop graph interrupts."""
+
 from enum import Enum
 
 

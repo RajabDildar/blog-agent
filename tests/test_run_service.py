@@ -1,31 +1,33 @@
 """Unit tests for RunService domain invariants and authorization rules."""
+
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from apps.api.config import get_settings
-from apps.api.db.models import User, Run, RunStatus, RunVisibility
+from apps.api.db.models import RunStatus, RunVisibility, User
 from apps.api.services.run_service import (
-    create_run,
-    get_run_by_id,
-    list_runs,
-    update_run_visibility,
-    update_run_featured,
-    get_gallery,
-    get_featured,
     RunInvariantError,
-    RunNotFoundError,
+    create_run,
+    get_featured,
+    get_gallery,
+    get_run_by_id,
+    update_run_featured,
+    update_run_visibility,
 )
 
 settings = get_settings()
+
 
 @pytest.fixture(scope="module")
 def db_engine():
     engine = create_engine(settings.DATABASE_URL)
     yield engine
     engine.dispose()
+
 
 @pytest.fixture
 def db(db_engine):
@@ -36,6 +38,7 @@ def db(db_engine):
     finally:
         session.rollback()
         session.close()
+
 
 def create_user(db, is_admin=False) -> User:
     user = User(
@@ -49,13 +52,22 @@ def create_user(db, is_admin=False) -> User:
     db.refresh(user)
     return user
 
+
 def test_run_creation_requires_identity(db):
-    with pytest.raises(RunInvariantError, match="must have either user_id or anonymous_session_id"):
-        create_run(db, original_input="Topic without identity", user_id=None, anonymous_session_id=None)
+    with pytest.raises(
+        RunInvariantError, match="must have either user_id or anonymous_session_id"
+    ):
+        create_run(
+            db,
+            original_input="Topic without identity",
+            user_id=None,
+            anonymous_session_id=None,
+        )
 
     with pytest.raises(RunInvariantError, match="cannot be empty"):
         user = create_user(db)
         create_run(db, original_input="   ", user_id=user.id)
+
 
 def test_run_creation_initial_state(db):
     user = create_user(db)
@@ -68,6 +80,7 @@ def test_run_creation_initial_state(db):
     assert run.visibility == RunVisibility.PRIVATE.value
     assert run.featured is False
 
+
 def test_strict_ownership_access(db):
     user_a = create_user(db)
     user_b = create_user(db)
@@ -75,7 +88,9 @@ def test_strict_ownership_access(db):
     anon_b = str(uuid.uuid4())
 
     run_a = create_run(db, original_input="User A private run", user_id=user_a.id)
-    run_anon = create_run(db, original_input="Anon A private run", anonymous_session_id=anon_a)
+    run_anon = create_run(
+        db, original_input="Anon A private run", anonymous_session_id=anon_a
+    )
 
     # User A can read own run
     assert get_run_by_id(db, run_a.id, user_id=user_a.id) is not None
@@ -89,17 +104,20 @@ def test_strict_ownership_access(db):
     # Admin cannot read User A's private run (roadmap 11.10 rule)
     assert get_run_by_id(db, run_a.id, is_admin=True) is None
 
+
 def test_visibility_invariants(db):
     user = create_user(db)
     run = create_run(db, original_input="Running article", user_id=user.id)
 
     # Incomplete run cannot be made public
-    with pytest.raises(RunInvariantError, match="Only completed runs can be made public"):
+    with pytest.raises(
+        RunInvariantError, match="Only completed runs can be made public"
+    ):
         update_run_visibility(db, run.id, RunVisibility.PUBLIC, user_id=user.id)
 
     # Complete the run
     run.status = RunStatus.COMPLETED.value
-    run.completed_at = datetime.now(timezone.utc)
+    run.completed_at = datetime.now(UTC)
     db.commit()
 
     # Now it can be made public
@@ -109,9 +127,9 @@ def test_visibility_invariants(db):
     # Public completed run is accessible by anyone
     assert get_run_by_id(db, run.id) is not None
 
+
 def test_featured_invariants(db):
     user = create_user(db)
-    admin = create_user(db, is_admin=True)
     run = create_run(db, original_input="Article to feature", user_id=user.id)
 
     # Non-admin cannot feature
@@ -124,7 +142,7 @@ def test_featured_invariants(db):
 
     # Make run completed but private
     run.status = RunStatus.COMPLETED.value
-    run.completed_at = datetime.now(timezone.utc)
+    run.completed_at = datetime.now(UTC)
     db.commit()
 
     with pytest.raises(RunInvariantError, match="Cannot feature a private run"):
@@ -139,9 +157,12 @@ def test_featured_invariants(db):
     assert featured_run.featured is True
 
     # Switching visibility to private automatically unfeatures
-    privatized = update_run_visibility(db, run.id, RunVisibility.PRIVATE, user_id=user.id)
+    privatized = update_run_visibility(
+        db, run.id, RunVisibility.PRIVATE, user_id=user.id
+    )
     assert privatized.visibility == RunVisibility.PRIVATE.value
     assert privatized.featured is False
+
 
 def test_gallery_and_featured_queries(db):
     user = create_user(db)
@@ -149,7 +170,7 @@ def test_gallery_and_featured_queries(db):
     run.status = RunStatus.COMPLETED.value
     run.visibility = RunVisibility.PUBLIC.value
     run.featured = True
-    run.completed_at = datetime.now(timezone.utc)
+    run.completed_at = datetime.now(UTC)
     db.commit()
 
     gallery = get_gallery(db)

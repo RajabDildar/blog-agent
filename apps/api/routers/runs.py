@@ -1,51 +1,51 @@
 """Runs router implementing run creation, retrieval, ownership filtering, visibility updates, HITL input, resume, and SSE."""
+
 import asyncio
 import json
-from datetime import datetime, timezone
-from typing import List, Optional, Union
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from datetime import UTC, datetime
+
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from apps.api.config import get_settings
+from apps.api.db.models import Run, RunEvent, RunStatus, User
 from apps.api.dependencies import (
-    get_db,
-    get_current_user_optional,
-    get_current_admin,
     get_anonymous_id,
+    get_current_admin,
+    get_current_user_optional,
+    get_db,
     verify_csrf,
 )
-from apps.api.db.models import User, Run, RunEvent, RunStatus
 from apps.api.inngest import send_inngest_event
-from apps.api.schemas.runs import (
-    RunCreateRequest,
-    RunResponse,
-    PublicRunResponse,
-    RunListItemResponse,
-    RunVisibilityUpdateRequest,
-    RunFeatureUpdateRequest,
-    HumanInputRequest,
-)
 from apps.api.schemas.errors import error_response
-from blog_agent.schemas.interaction_types import InteractionType
+from apps.api.schemas.runs import (
+    HumanInputRequest,
+    PublicRunResponse,
+    RunCreateRequest,
+    RunFeatureUpdateRequest,
+    RunListItemResponse,
+    RunResponse,
+    RunVisibilityUpdateRequest,
+)
 from apps.api.services.diagnostics_sink import WorkerSessionLocal
 from apps.api.services.quota_service import (
+    QuotaExceededError,
     check_and_increment_abuse_limit,
     check_pre_generation_quota,
-    QuotaExceededError,
     hash_identifier,
 )
 from apps.api.services.run_service import (
-    create_run,
-    get_run_by_id,
-    authorize_run_access,
-    list_runs,
-    update_run_visibility,
-    update_run_featured,
-    RunNotFoundError,
     RunInvariantError,
+    RunNotFoundError,
+    authorize_run_access,
+    create_run,
+    list_runs,
+    update_run_featured,
+    update_run_visibility,
 )
+from blog_agent.schemas.interaction_types import InteractionType
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 settings = get_settings()
@@ -75,7 +75,7 @@ def create_new_run(
     request: Request,
     response: Response,
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user_optional),
+    current_user: User | None = Depends(get_current_user_optional),
     _csrf: None = Depends(verify_csrf),
 ):
     """
@@ -90,7 +90,11 @@ def create_new_run(
     try:
         check_and_increment_abuse_limit(client_ip, db=db)
     except QuotaExceededError as e:
-        raise error_response(status_code=status.HTTP_429_TOO_MANY_REQUESTS, code="abuse_limit_exceeded", message=str(e))
+        raise error_response(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            code="abuse_limit_exceeded",
+            message=str(e),
+        )
 
     # Pre-generation quota check
     try:
@@ -101,7 +105,11 @@ def create_new_run(
             client_ip=client_ip,
         )
     except QuotaExceededError as e:
-        raise error_response(status_code=status.HTTP_429_TOO_MANY_REQUESTS, code="quota_exceeded", message=str(e))
+        raise error_response(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            code="quota_exceeded",
+            message=str(e),
+        )
 
     client_ip_hash = hash_identifier(client_ip) if client_ip else None
     try:
@@ -113,7 +121,11 @@ def create_new_run(
             client_ip_hash=client_ip_hash,
         )
     except RunInvariantError as e:
-        raise error_response(status_code=status.HTTP_400_BAD_REQUEST, code="invalid_input", message=str(e))
+        raise error_response(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            code="invalid_input",
+            message=str(e),
+        )
 
     # Record initial event in run_events
     initial_event = RunEvent(
@@ -130,7 +142,7 @@ def create_new_run(
     # Dispatch Inngest event with fail-safe handling (Task 7)
     try:
         send_inngest_event("blog-agent/run.start", {"run_id": run.id})
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - Any dispatch failure must persist a failed run.
         run.status = RunStatus.FAILED.value
         run.error_code = "send_failure"
         run.error_message = f"Failed to dispatch background job: {e}"
@@ -145,32 +157,38 @@ def create_new_run(
     return _format_run_response(run)
 
 
-@router.get("", response_model=List[RunListItemResponse])
+@router.get("", response_model=list[RunListItemResponse])
 def get_user_runs(
     request: Request,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user_optional),
+    current_user: User | None = Depends(get_current_user_optional),
 ):
     """Lists runs owned by the active user or anonymous session."""
     user_id = current_user.id if current_user else None
-    anon_id = request.cookies.get(settings.ANONYMOUS_COOKIE_NAME) if not user_id else None
+    anon_id = (
+        request.cookies.get(settings.ANONYMOUS_COOKIE_NAME) if not user_id else None
+    )
 
-    runs = list_runs(db, user_id=user_id, anonymous_session_id=anon_id, limit=limit, offset=offset)
+    runs = list_runs(
+        db, user_id=user_id, anonymous_session_id=anon_id, limit=limit, offset=offset
+    )
     return [_format_list_item(r) for r in runs]
 
 
-@router.get("/{run_id}", response_model=Union[RunResponse, PublicRunResponse])
+@router.get("/{run_id}", response_model=RunResponse | PublicRunResponse)
 def get_run(
     run_id: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user_optional),
+    current_user: User | None = Depends(get_current_user_optional),
 ):
     """Fetches a run by ID if the caller is authorized."""
     user_id = current_user.id if current_user else None
-    anon_id = request.cookies.get(settings.ANONYMOUS_COOKIE_NAME) if not user_id else None
+    anon_id = (
+        request.cookies.get(settings.ANONYMOUS_COOKIE_NAME) if not user_id else None
+    )
 
     run = db.scalar(select(Run).where(Run.id == run_id))
     if not run:
@@ -181,7 +199,7 @@ def get_run(
             run_id=run_id,
         )
 
-    access =  authorize_run_access(
+    access = authorize_run_access(
         run,
         user_id=user_id,
         anonymous_session_id=anon_id,
@@ -205,12 +223,14 @@ def change_run_visibility(
     payload: RunVisibilityUpdateRequest,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user_optional),
+    current_user: User | None = Depends(get_current_user_optional),
     _csrf: None = Depends(verify_csrf),
 ):
     """Updates visibility of a run. Only completed runs can be made public."""
     user_id = current_user.id if current_user else None
-    anon_id = request.cookies.get(settings.ANONYMOUS_COOKIE_NAME) if not user_id else None
+    anon_id = (
+        request.cookies.get(settings.ANONYMOUS_COOKIE_NAME) if not user_id else None
+    )
 
     try:
         run = update_run_visibility(
@@ -221,11 +241,26 @@ def change_run_visibility(
             anonymous_session_id=anon_id,
         )
     except RunNotFoundError:
-        raise error_response(status_code=status.HTTP_404_NOT_FOUND, code="run_not_found", message=f"Run '{run_id}' not found", run_id=run_id)
+        raise error_response(
+            status_code=status.HTTP_404_NOT_FOUND,
+            code="run_not_found",
+            message=f"Run '{run_id}' not found",
+            run_id=run_id,
+        )
     except PermissionError as e:
-        raise error_response(status_code=status.HTTP_403_FORBIDDEN, code="forbidden", message=str(e), run_id=run_id)
+        raise error_response(
+            status_code=status.HTTP_403_FORBIDDEN,
+            code="forbidden",
+            message=str(e),
+            run_id=run_id,
+        )
     except RunInvariantError as e:
-        raise error_response(status_code=status.HTTP_409_CONFLICT, code="invalid_state_transition", message=str(e), run_id=run_id)
+        raise error_response(
+            status_code=status.HTTP_409_CONFLICT,
+            code="invalid_state_transition",
+            message=str(e),
+            run_id=run_id,
+        )
 
     return _format_run_response(run)
 
@@ -247,25 +282,43 @@ def feature_run(
             is_admin=admin.is_admin,
         )
     except RunNotFoundError:
-        raise error_response(status_code=status.HTTP_404_NOT_FOUND, code="run_not_found", message=f"Run '{run_id}' not found", run_id=run_id)
+        raise error_response(
+            status_code=status.HTTP_404_NOT_FOUND,
+            code="run_not_found",
+            message=f"Run '{run_id}' not found",
+            run_id=run_id,
+        )
     except PermissionError as e:
-        raise error_response(status_code=status.HTTP_403_FORBIDDEN, code="forbidden", message=str(e), run_id=run_id)
+        raise error_response(
+            status_code=status.HTTP_403_FORBIDDEN,
+            code="forbidden",
+            message=str(e),
+            run_id=run_id,
+        )
     except RunInvariantError as e:
-        raise error_response(status_code=status.HTTP_409_CONFLICT, code="invalid_state_transition", message=str(e), run_id=run_id)
+        raise error_response(
+            status_code=status.HTTP_409_CONFLICT,
+            code="invalid_state_transition",
+            message=str(e),
+            run_id=run_id,
+        )
 
     return _format_run_response(run)
 
 
 # --- Phase 4 Operational Endpoints ---
 
-@router.post("/{run_id}/input", response_model=RunResponse, status_code=status.HTTP_202_ACCEPTED)
+
+@router.post(
+    "/{run_id}/input", response_model=RunResponse, status_code=status.HTTP_202_ACCEPTED
+)
 def submit_human_input(
     run_id: str,
     payload: HumanInputRequest,
     request: Request,
     response: Response,
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user_optional),
+    current_user: User | None = Depends(get_current_user_optional),
     _csrf: None = Depends(verify_csrf),
 ):
     """
@@ -273,21 +326,40 @@ def submit_human_input(
     Atomically clears interaction to prevent duplicate resume and dispatches a blog-agent/run.resume Inngest event.
     """
     user_id = current_user.id if current_user else None
-    anon_id = request.cookies.get(settings.ANONYMOUS_COOKIE_NAME) if not user_id else None
+    anon_id = (
+        request.cookies.get(settings.ANONYMOUS_COOKIE_NAME) if not user_id else None
+    )
     client_ip = request.client.host if request.client else None
 
     try:
         check_and_increment_abuse_limit(client_ip, db=db)
     except QuotaExceededError as e:
-        raise error_response(status_code=status.HTTP_429_TOO_MANY_REQUESTS, code="abuse_limit_exceeded", message=str(e))
+        raise error_response(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            code="abuse_limit_exceeded",
+            message=str(e),
+        )
 
     run = db.scalar(select(Run).where(Run.id == run_id).with_for_update())
     if not run:
-        raise error_response(status_code=status.HTTP_404_NOT_FOUND, code="run_not_found", message=f"Run '{run_id}' not found", run_id=run_id)
+        raise error_response(
+            status_code=status.HTTP_404_NOT_FOUND,
+            code="run_not_found",
+            message=f"Run '{run_id}' not found",
+            run_id=run_id,
+        )
 
     # Caller authorization: hide existence from non-owners (404)
-    if authorize_run_access(run, user_id=user_id, anonymous_session_id=anon_id) != "owner":
-        raise error_response(status_code=status.HTTP_404_NOT_FOUND, code="run_not_found", message=f"Run '{run_id}' not found", run_id=run_id)
+    if (
+        authorize_run_access(run, user_id=user_id, anonymous_session_id=anon_id)
+        != "owner"
+    ):
+        raise error_response(
+            status_code=status.HTTP_404_NOT_FOUND,
+            code="run_not_found",
+            message=f"Run '{run_id}' not found",
+            run_id=run_id,
+        )
 
     # Status & pending interaction check
     if run.status != RunStatus.AWAITING_INPUT.value or not run.pending_interaction:
@@ -326,7 +398,10 @@ def submit_human_input(
                 message=f"Invalid action '{payload.action}' for clarification. Must be 'select_option' or 'custom_input'",
                 run_id=run_id,
             )
-    elif itype in (InteractionType.TOPIC_CONFIRMATION_REQUIRED.value, "proposed_topic_confirmation"):
+    elif itype in (
+        InteractionType.TOPIC_CONFIRMATION_REQUIRED.value,
+        "proposed_topic_confirmation",
+    ):
         if payload.action not in ("proceed", "cancel"):
             raise error_response(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -351,8 +426,11 @@ def submit_human_input(
 
     # Dispatch Inngest resume event with fail-safe rollback (Task 7)
     try:
-        send_inngest_event("blog-agent/run.resume", {"run_id": run_id, "human_response": human_response_payload})
-    except Exception as e:
+        send_inngest_event(
+            "blog-agent/run.resume",
+            {"run_id": run_id, "human_response": human_response_payload},
+        )
+    except Exception as e:  # noqa: BLE001 - Any dispatch failure must restore the pending interaction.
         run.status = RunStatus.AWAITING_INPUT.value
         run.pending_interaction = interaction
         db.commit()
@@ -366,12 +444,14 @@ def submit_human_input(
     return _format_run_response(run)
 
 
-@router.post("/{run_id}/resume", response_model=RunResponse, status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/{run_id}/resume", response_model=RunResponse, status_code=status.HTTP_202_ACCEPTED
+)
 def resume_paused_run(
     run_id: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user_optional),
+    current_user: User | None = Depends(get_current_user_optional),
     _csrf: None = Depends(verify_csrf),
 ):
     """
@@ -379,14 +459,29 @@ def resume_paused_run(
     Validates ownership, terminal boundaries, and rate-limit backoff timers.
     """
     user_id = current_user.id if current_user else None
-    anon_id = request.cookies.get(settings.ANONYMOUS_COOKIE_NAME) if not user_id else None
+    anon_id = (
+        request.cookies.get(settings.ANONYMOUS_COOKIE_NAME) if not user_id else None
+    )
 
     run = db.scalar(select(Run).where(Run.id == run_id).with_for_update())
     if not run:
-        raise error_response(status_code=status.HTTP_404_NOT_FOUND, code="run_not_found", message=f"Run '{run_id}' not found", run_id=run_id)
+        raise error_response(
+            status_code=status.HTTP_404_NOT_FOUND,
+            code="run_not_found",
+            message=f"Run '{run_id}' not found",
+            run_id=run_id,
+        )
 
-    if authorize_run_access(run, user_id=user_id, anonymous_session_id=anon_id) != "owner":
-        raise error_response(status_code=status.HTTP_404_NOT_FOUND, code="run_not_found", message=f"Run '{run_id}' not found", run_id=run_id)
+    if (
+        authorize_run_access(run, user_id=user_id, anonymous_session_id=anon_id)
+        != "owner"
+    ):
+        raise error_response(
+            status_code=status.HTTP_404_NOT_FOUND,
+            code="run_not_found",
+            message=f"Run '{run_id}' not found",
+            run_id=run_id,
+        )
 
     if run.status not in (RunStatus.PAUSED.value, RunStatus.FAILED.value):
         raise error_response(
@@ -397,7 +492,7 @@ def resume_paused_run(
         )
 
     if run.status == RunStatus.PAUSED.value and run.resume_after:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if now < run.resume_after:
             raise error_response(
                 status_code=status.HTTP_409_CONFLICT,
@@ -412,8 +507,10 @@ def resume_paused_run(
 
     # Dispatch Inngest resume event with fail-safe rollback (Task 7)
     try:
-        send_inngest_event("blog-agent/run.resume", {"run_id": run_id, "human_response": None})
-    except Exception as e:
+        send_inngest_event(
+            "blog-agent/run.resume", {"run_id": run_id, "human_response": None}
+        )
+    except Exception as e:  # noqa: BLE001 - Any dispatch failure must restore the prior run status.
         run.status = prev_status
         db.commit()
         raise error_response(
@@ -431,21 +528,36 @@ async def stream_run_events(
     run_id: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user_optional),
+    current_user: User | None = Depends(get_current_user_optional),
 ):
     """
     Streams Server-Sent Events (SSE) for live generation progress.
     Supports Last-Event-ID reconnection, monotonic sequence ordering, and clean termination.
     """
     user_id = current_user.id if current_user else None
-    anon_id = request.cookies.get(settings.ANONYMOUS_COOKIE_NAME) if not user_id else None
+    anon_id = (
+        request.cookies.get(settings.ANONYMOUS_COOKIE_NAME) if not user_id else None
+    )
 
     run = db.scalar(select(Run).where(Run.id == run_id))
     if not run:
-        raise error_response(status_code=status.HTTP_404_NOT_FOUND, code="run_not_found", message=f"Run '{run_id}' not found", run_id=run_id)
+        raise error_response(
+            status_code=status.HTTP_404_NOT_FOUND,
+            code="run_not_found",
+            message=f"Run '{run_id}' not found",
+            run_id=run_id,
+        )
 
-    if authorize_run_access(run, user_id=user_id, anonymous_session_id=anon_id) != "owner":
-        raise error_response(status_code=status.HTTP_404_NOT_FOUND, code="run_not_found", message=f"Run '{run_id}' not found", run_id=run_id)
+    if (
+        authorize_run_access(run, user_id=user_id, anonymous_session_id=anon_id)
+        != "owner"
+    ):
+        raise error_response(
+            status_code=status.HTTP_404_NOT_FOUND,
+            code="run_not_found",
+            message=f"Run '{run_id}' not found",
+            run_id=run_id,
+        )
 
     last_event_id_header = request.headers.get("Last-Event-ID")
     initial_last_seq = 0
@@ -492,7 +604,9 @@ async def stream_run_events(
                         "stage": ev.stage,
                         "message": ev.message,
                         "payload": ev.payload,
-                        "created_at": ev.created_at.isoformat() if ev.created_at else None,
+                        "created_at": ev.created_at.isoformat()
+                        if ev.created_at
+                        else None,
                     }
                     yield f"id: {ev.sequence}\nevent: {ev.event_type}\ndata: {json.dumps(event_data)}\n\n"
             else:

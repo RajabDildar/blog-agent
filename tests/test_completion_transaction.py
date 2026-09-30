@@ -1,11 +1,12 @@
 """Integration test for completion transaction boundary, PostgreSQL persistence, and rollback handling."""
-import pytest
+
 from unittest.mock import patch
+
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from apps.api.config import get_settings
-from apps.api.db.base import Base
 from apps.api.db.models import Run, RunStatus
 from blog_agent.services.storage import publish_blog
 
@@ -22,10 +23,18 @@ FAIL_RUN_ID = "f" * 32
 @pytest.fixture(autouse=True)
 def setup_db():
     with engine.begin() as conn:
-        conn.execute(text("DELETE FROM run_events; DELETE FROM runs; DELETE FROM sessions; DELETE FROM users;"))
+        conn.execute(
+            text(
+                "DELETE FROM run_events; DELETE FROM runs; DELETE FROM sessions; DELETE FROM users;"
+            )
+        )
     yield
     with engine.begin() as conn:
-        conn.execute(text("DELETE FROM run_events; DELETE FROM runs; DELETE FROM sessions; DELETE FROM users;"))
+        conn.execute(
+            text(
+                "DELETE FROM run_events; DELETE FROM runs; DELETE FROM sessions; DELETE FROM users;"
+            )
+        )
 
 
 def test_completion_transaction_persists_article(tmp_path, monkeypatch):
@@ -50,7 +59,7 @@ High-performance software systems require low latency and predictable memory all
 Memory management and I/O efficiency dictate system throughput.
 """
 
-        blog_path = publish_blog(
+        publish_blog(
             title="Architecture of High-Performance Systems",
             markdown=md_content,
             run_id=RUN_ID,
@@ -63,11 +72,16 @@ Memory management and I/O efficiency dictate system throughput.
         assert run.completed_at is not None
         assert run.article_title == "Architecture of High-Performance Systems"
         assert "High-performance software systems" in run.article_markdown
-        assert "High-performance software systems require low latency" in run.article_excerpt
+        assert (
+            "High-performance software systems require low latency"
+            in run.article_excerpt
+        )
 
 
 @patch("blog_agent.services.storage.upload_run_image")
-def test_completion_transaction_rollback_on_upload_failure(mock_upload, tmp_path, monkeypatch):
+def test_completion_transaction_rollback_on_upload_failure(
+    mock_upload, tmp_path, monkeypatch
+):
     monkeypatch.chdir(tmp_path)
     mock_upload.side_effect = RuntimeError("Cloudinary upload connection error")
 
@@ -90,9 +104,16 @@ def test_completion_transaction_rollback_on_upload_failure(mock_upload, tmp_path
         pub_file = pub_dir / "diagram.png"
         md_img_path = pub_file
 
-        monkeypatch.setattr("blog_agent.services.storage.run_images_dir", lambda r: staged_dir)
-        monkeypatch.setattr("blog_agent.services.storage.published_images_dir", lambda title, run_id: pub_dir)
-        monkeypatch.setattr("blog_agent.services.storage.is_cloudinary_configured", lambda: True)
+        monkeypatch.setattr(
+            "blog_agent.services.storage.run_images_dir", lambda r: staged_dir
+        )
+        monkeypatch.setattr(
+            "blog_agent.services.storage.published_images_dir",
+            lambda title, run_id: pub_dir,
+        )
+        monkeypatch.setattr(
+            "blog_agent.services.storage.is_cloudinary_configured", lambda: True
+        )
 
         image_results = [
             {

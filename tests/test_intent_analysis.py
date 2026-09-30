@@ -1,7 +1,11 @@
 import pytest
 from pydantic import ValidationError
 
-from blog_agent.schemas.models import IntentAnalysis, IntentHumanResponse, ProposedTopicAnalysis
+from blog_agent.schemas.models import (
+    IntentAnalysis,
+    IntentHumanResponse,
+    ProposedTopicAnalysis,
+)
 
 
 def test_intent_analysis_accepted_valid():
@@ -140,5 +144,7 @@ def test_intent_human_response_validation():
 
 
 def test_proposed_topic_analysis_valid():
-    pta = ProposedTopicAnalysis(proposed_topic="Advanced PostgreSQL Indexing Strategies")
+    pta = ProposedTopicAnalysis(
+        proposed_topic="Advanced PostgreSQL Indexing Strategies"
+    )
     assert pta.proposed_topic == "Advanced PostgreSQL Indexing Strategies"

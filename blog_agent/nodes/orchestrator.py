@@ -11,17 +11,20 @@ from blog_agent.schemas.models import (
 from blog_agent.schemas.state import State
 from blog_agent.services.llm import gemini_llm
 
-
-RESEARCH_MODES: frozenset[str] = frozenset({
-    "hybrid",
-    "open_book",
-})
+RESEARCH_MODES: frozenset[str] = frozenset(
+    {
+        "hybrid",
+        "open_book",
+    }
+)
 
 # The application owns the final `## Sources` section, so no planned task may
 # claim that title (roadmap Step 2 / Step 3 reserved-title invariant).
-RESERVED_TASK_TITLES: frozenset[str] = frozenset({
-    "Sources",
-})
+RESERVED_TASK_TITLES: frozenset[str] = frozenset(
+    {
+        "Sources",
+    }
+)
 
 RESERVED_TASK_TITLE_NORMALIZED: frozenset[str] = frozenset(
     title.casefold() for title in RESERVED_TASK_TITLES
@@ -66,9 +69,7 @@ def validate_plan_contract(
 
     for task in plan.tasks:
         if task.id in seen_task_ids:
-            raise ValueError(
-                f"Plan contains duplicate task ID: {task.id}"
-            )
+            raise ValueError(f"Plan contains duplicate task ID: {task.id}")
 
         seen_task_ids.add(task.id)
 
@@ -91,9 +92,7 @@ def validate_plan_contract(
 
     for task in plan.tasks:
         if task.requires_citations and not task.requires_research:
-            raise ValueError(
-                f"Task {task.id} requires citations but not research."
-            )
+            raise ValueError(f"Task {task.id} requires citations but not research.")
 
         if task.requires_research and not task.evidence_refs:
             raise ValueError(

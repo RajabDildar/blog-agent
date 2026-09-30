@@ -1,10 +1,10 @@
+from blog_agent.nodes.merger import merge_content
 from blog_agent.schemas.models import (
     Plan,
     ResearchEvidence,
     SectionOutput,
     Task,
 )
-from blog_agent.nodes.merger import merge_content
 from blog_agent.services.citation_verification import (
     normalize_url,
     verify_citations,
@@ -113,8 +113,7 @@ def test_required_citation_missing_creates_issue() -> None:
     )
 
     assert any(
-        issue.task_id == 1 and "requires citations" in issue.problem
-        for issue in issues
+        issue.task_id == 1 and "requires citations" in issue.problem for issue in issues
     )
 
 
@@ -161,8 +160,7 @@ def test_sources_section_missing_when_research_used_creates_issue() -> None:
     )
 
     assert any(
-        issue.task_id is None
-        and "missing a final ## Sources section" in issue.problem
+        issue.task_id is None and "missing a final ## Sources section" in issue.problem
         for issue in issues
     )
 
@@ -188,8 +186,7 @@ def test_sources_section_not_final_h2_creates_issue() -> None:
     )
 
     assert any(
-        issue.task_id is None
-        and "must be the final H2 section" in issue.problem
+        issue.task_id is None and "must be the final H2 section" in issue.problem
         for issue in issues
     )
 
@@ -322,13 +319,25 @@ def test_merger_generates_sources_section_in_first_reference_order():
         ],
     )
     evidence = [
-        make_evidence(evidence_id=1, url="https://example.com/source1", source_title="Source 1"),
-        make_evidence(evidence_id=2, url="https://example.com/source2", source_title="Source 2"),
-        make_evidence(evidence_id=3, url="https://example.com/source3", source_title="Unused Source 3"),
+        make_evidence(
+            evidence_id=1, url="https://example.com/source1", source_title="Source 1"
+        ),
+        make_evidence(
+            evidence_id=2, url="https://example.com/source2", source_title="Source 2"
+        ),
+        make_evidence(
+            evidence_id=3,
+            url="https://example.com/source3",
+            source_title="Unused Source 3",
+        ),
     ]
     sections = {
-        1: SectionOutput(body_markdown="Section 1 content [source2](https://example.com/source2)."),
-        2: SectionOutput(body_markdown="Section 2 content [source1](https://example.com/source1)."),
+        1: SectionOutput(
+            body_markdown="Section 1 content [source2](https://example.com/source2)."
+        ),
+        2: SectionOutput(
+            body_markdown="Section 2 content [source1](https://example.com/source1)."
+        ),
     }
 
     state = {
@@ -356,7 +365,13 @@ def test_merger_closed_book_does_not_generate_sources_section():
         audience="Audience",
         tone="Tone",
         tasks=[
-            make_task(task_id=1, title="Section 1", requires_research=False, requires_citations=False, evidence_refs=[]),
+            make_task(
+                task_id=1,
+                title="Section 1",
+                requires_research=False,
+                requires_citations=False,
+                evidence_refs=[],
+            ),
         ],
     )
     sections = {

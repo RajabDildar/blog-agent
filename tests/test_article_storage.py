@@ -1,7 +1,9 @@
 """Unit tests for article storage, excerpt extraction, asset route conversion, and dual storage backend."""
-import pytest
-from pathlib import Path
+
+from datetime import UTC
 from unittest.mock import patch
+
+import pytest
 
 from blog_agent.services.run_paths import (
     markdown_image_path,
@@ -9,9 +11,9 @@ from blog_agent.services.run_paths import (
     staged_image_path,
 )
 from blog_agent.services.storage import (
+    convert_markdown_asset_routes,
     extract_article_excerpt,
     publish_blog,
-    convert_markdown_asset_routes,
 )
 
 
@@ -25,7 +27,10 @@ This is the first plain-text paragraph of the technical article. It explains the
 Another paragraph here.
 """
     excerpt = extract_article_excerpt(md)
-    assert excerpt == "This is the first plain-text paragraph of the technical article. It explains the main concepts cleanly."
+    assert (
+        excerpt
+        == "This is the first plain-text paragraph of the technical article. It explains the main concepts cleanly."
+    )
 
 
 def test_extract_article_excerpt_fallback():
@@ -49,7 +54,9 @@ def test_publish_blog_local_fallback(tmp_path, monkeypatch):
     staged_img.write_bytes(b"image-content-data")
 
     pub_img = published_image_path(title=title, run_id=run_id, filename="diagram.png")
-    md_img_path = markdown_image_path(title=title, run_id=run_id, filename="diagram.png")
+    md_img_path = markdown_image_path(
+        title=title, run_id=run_id, filename="diagram.png"
+    )
 
     image_results = [
         {
@@ -81,12 +88,13 @@ def test_publish_blog_local_fallback(tmp_path, monkeypatch):
 
 
 def test_cleanup_expired_runs():
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta
     from unittest.mock import MagicMock
+
     from apps.api.db.models import Run, RunStatus
     from apps.api.maintenance.cleanup_expired_runs import cleanup_expired_runs
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     old_time = now - timedelta(hours=50)
 
     anon_run = Run(
@@ -97,28 +105,24 @@ def test_cleanup_expired_runs():
         status=RunStatus.COMPLETED.value,
         article_markdown="# Expired Content",
         article_assets=[
-            {"filename": "img1.png", "public_id": "blog-agent/runs/anon-exp-1/images/img1"},
+            {
+                "filename": "img1.png",
+                "public_id": "blog-agent/runs/anon-exp-1/images/img1",
+            },
             {"filename": "local.png", "public_id": "local:anon-exp-1:local.png"},
         ],
-    )
-
-    claimed_run = Run(
-        id="claimed-run-1",
-        user_id="user-123",
-        original_input="Claimed input",
-        anonymous_session_id=None,
-        created_at=old_time,
-        status=RunStatus.COMPLETED.value,
-        article_markdown="# Claimed Content",
-        article_assets=[{"filename": "img2.png", "public_id": "blog-agent/runs/claimed-run-1/images/img2"}],
     )
 
     mock_session = MagicMock()
     mock_session.scalars.return_value.all.return_value = [anon_run]
 
-    with patch("apps.api.maintenance.cleanup_expired_runs.WorkerSessionLocal") as mock_ws:
+    with patch(
+        "apps.api.maintenance.cleanup_expired_runs.WorkerSessionLocal"
+    ) as mock_ws:
         mock_ws.return_value.__enter__.return_value = mock_session
-        with patch("blog_agent.services.cloudinary_storage.delete_cloudinary_assets") as mock_del:
+        with patch(
+            "blog_agent.services.cloudinary_storage.delete_cloudinary_assets"
+        ) as mock_del:
             count = cleanup_expired_runs(retention_hours=48)
 
             assert count == 1

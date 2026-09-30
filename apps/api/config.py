@@ -1,40 +1,47 @@
 """FastAPI application settings and environment configuration."""
-import os
+
 from functools import lru_cache
-from typing import List, Union, Optional
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment or .env file."""
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )
 
-    DATABASE_URL: str = "postgresql+psycopg://postgres:postgrespassword@localhost:5432/blog_agent"
-    TEST_DATABASE_URL: str = "postgresql+psycopg://postgres:postgrespassword@localhost:5432/blog_agent_test"
+    DATABASE_URL: str = (
+        "postgresql+psycopg://postgres:postgrespassword@localhost:5432/blog_agent"
+    )
+    TEST_DATABASE_URL: str = (
+        "postgresql+psycopg://postgres:postgrespassword@localhost:5432/blog_agent_test"
+    )
     GOOGLE_CLIENT_ID: str = "mock-google-client-id"
     SESSION_SECRET_KEY: str = "dev_session_secret_key_12345678901234567890"
     SESSION_MAX_AGE_SECONDS: int = 7 * 24 * 3600  # 7 days
-    ALLOWED_ORIGINS: Union[str, List[str]] = ["http://localhost:5173", "http://localhost:3000"]
+    ALLOWED_ORIGINS: str | list[str] = [
+        "http://localhost:5173",
+        "http://localhost:3000",
+    ]
     ENVIRONMENT: str = "development"
 
     # Phase 4: Inngest Orchestration, Checkpointing, Quotas & Abuse Prevention
     INNGEST_APP_ID: str = "blog-agent"
-    INNGEST_EVENT_KEY: Optional[str] = None
-    INNGEST_SIGNING_KEY: Optional[str] = None
+    INNGEST_EVENT_KEY: str | None = None
+    INNGEST_SIGNING_KEY: str | None = None
     CHECKPOINT_BACKEND: str = "postgres"
     AUTHENTICATED_DAILY_RUN_LIMIT: int = 5
     ANONYMOUS_DAILY_IP_LIMIT: int = 5
     INTENT_REQUESTS_PER_IP_PER_HOUR: int = 20
     # Phase 5: Cloudinary Image Storage
-    CLOUDINARY_CLOUD_NAME: Optional[str] = None
-    CLOUDINARY_API_KEY: Optional[str] = None
-    CLOUDINARY_API_SECRET: Optional[str] = None
-
+    CLOUDINARY_CLOUD_NAME: str | None = None
+    CLOUDINARY_API_KEY: str | None = None
+    CLOUDINARY_API_SECRET: str | None = None
 
     SESSION_COOKIE_NAME: str = "blog_session"
     CSRF_COOKIE_NAME: str = "blog_csrf"
@@ -42,7 +49,7 @@ class Settings(BaseSettings):
 
     @field_validator("ALLOWED_ORIGINS", mode="before")
     @classmethod
-    def parse_allowed_origins(cls, v: Union[str, List[str]]) -> List[str]:
+    def parse_allowed_origins(cls, v: str | list[str]) -> list[str]:
         if isinstance(v, str):
             return [origin.strip() for origin in v.split(",") if origin.strip()]
         return v

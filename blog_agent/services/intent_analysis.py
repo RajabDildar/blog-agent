@@ -1,4 +1,5 @@
 import logging
+
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
@@ -21,7 +22,6 @@ logger = logging.getLogger(__name__)
 
 class IntentAnalysisUnavailable(RuntimeError):
     """Raised when both primary (Gemini) and fallback (Groq) intent analysis fail."""
-    pass
 
 
 def get_gemini_intent_llm() -> InstrumentedRunnable:
@@ -86,7 +86,7 @@ def analyze_intent(
                 outcome=result.outcome,
             )
         return result
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - Any Gemini failure triggers the provider fallback.
         gemini_exc = exc
         logger.warning(
             "Gemini intent analysis failed, attempting Groq fallback: %s",
@@ -147,7 +147,7 @@ def generate_proposed_topic(
         if isinstance(result, dict):
             result = ProposedTopicAnalysis.model_validate(result)
         return result.proposed_topic.strip()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - Any Gemini failure triggers the provider fallback.
         logger.warning("Gemini proposed topic generation failed, trying Groq: %s", exc)
 
     # Try Groq fallback
@@ -158,7 +158,7 @@ def generate_proposed_topic(
         if isinstance(result, dict):
             result = ProposedTopicAnalysis.model_validate(result)
         return result.proposed_topic.strip()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - Any Groq failure triggers deterministic fallback.
         logger.warning("Groq proposed topic generation failed: %s", exc)
 
     # Deterministic fallback synthesis

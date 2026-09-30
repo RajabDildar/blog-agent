@@ -1,6 +1,6 @@
-from unittest.mock import MagicMock, patch
+from contextlib import suppress
+from unittest.mock import patch
 
-import pytest
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
 
@@ -68,7 +68,7 @@ def test_vague_input_triggers_clarification_interrupt():
             "saved_path": "",
         }
 
-        result = app.invoke(initial_state, config, context=context)
+        app.invoke(initial_state, config, context=context)
 
     # Graph should be interrupted
     state = app.get_state(config)
@@ -110,12 +110,15 @@ def test_resume_with_selected_option_finalizes_topic():
         router_topics.append(state["topic"])
         raise StopIteration("router_reached")
 
-    with patch(
-        "blog_agent.nodes.intent_gateway.analyze_intent",
-        side_effect=[first_analysis, second_analysis],
-    ), patch(
-        "blog_agent.graph.main_graph.router_node",
-        side_effect=mock_router,
+    with (
+        patch(
+            "blog_agent.nodes.intent_gateway.analyze_intent",
+            side_effect=[first_analysis, second_analysis],
+        ),
+        patch(
+            "blog_agent.graph.main_graph.router_node",
+            side_effect=mock_router,
+        ),
     ):
         app = build_graph(saver)
         initial_state = {
@@ -161,14 +164,12 @@ def test_resume_with_selected_option_finalizes_topic():
             action="select_option",
             value="AI agents and workflow automation",
         )
-        try:
+        with suppress(Exception):
             app.invoke(
                 Command(resume=human_resp.model_dump()),
                 config,
                 context=context,
             )
-        except Exception:
-            pass
 
     assert len(router_topics) == 1
     assert router_topics[0] == "Architectural Patterns for Autonomous AI Agents"
@@ -202,12 +203,15 @@ def test_resume_with_custom_input_finalizes_topic():
         router_topics.append(state["topic"])
         raise StopIteration("router_reached")
 
-    with patch(
-        "blog_agent.nodes.intent_gateway.analyze_intent",
-        side_effect=[first_analysis, second_analysis],
-    ), patch(
-        "blog_agent.graph.main_graph.router_node",
-        side_effect=mock_router,
+    with (
+        patch(
+            "blog_agent.nodes.intent_gateway.analyze_intent",
+            side_effect=[first_analysis, second_analysis],
+        ),
+        patch(
+            "blog_agent.graph.main_graph.router_node",
+            side_effect=mock_router,
+        ),
     ):
         app = build_graph(saver)
         initial_state = {
@@ -253,14 +257,12 @@ def test_resume_with_custom_input_finalizes_topic():
             action="custom_input",
             value="How LSM trees work internally",
         )
-        try:
+        with suppress(Exception):
             app.invoke(
                 Command(resume=human_resp.model_dump()),
                 config,
                 context=context,
             )
-        except Exception:
-            pass
 
     assert len(router_topics) == 1
     assert router_topics[0] == "Implementing LSM Trees in Modern Storage Engines"
@@ -288,12 +290,15 @@ def test_second_vague_response_triggers_confirmation_proceed_and_cancel():
         clarification_options=["Option D", "Option E", "Option F"],
     )
 
-    with patch(
-        "blog_agent.nodes.intent_gateway.analyze_intent",
-        side_effect=[first_analysis, second_analysis],
-    ), patch(
-        "blog_agent.nodes.intent_gateway.generate_proposed_topic",
-        return_value="The Evolution of Modern AI Systems in 2026",
+    with (
+        patch(
+            "blog_agent.nodes.intent_gateway.analyze_intent",
+            side_effect=[first_analysis, second_analysis],
+        ),
+        patch(
+            "blog_agent.nodes.intent_gateway.generate_proposed_topic",
+            return_value="The Evolution of Modern AI Systems in 2026",
+        ),
     ):
         initial_state = {
             "run_id": run_id,
@@ -348,7 +353,9 @@ def test_second_vague_response_triggers_confirmation_proceed_and_cancel():
         assert len(state.tasks[0].interrupts) == 1
         conf_val = state.tasks[0].interrupts[0].value
         assert conf_val["type"] == "topic_confirmation_required"
-        assert conf_val["proposed_topic"] == "The Evolution of Modern AI Systems in 2026"
+        assert (
+            conf_val["proposed_topic"] == "The Evolution of Modern AI Systems in 2026"
+        )
         assert "proceed" in conf_val["actions"]
         assert "cancel" in conf_val["actions"]
 
@@ -365,6 +372,7 @@ def test_second_vague_response_triggers_confirmation_proceed_and_cancel():
 
 def test_sequential_interrupt_resumes_via_resume_function(tmp_path):
     from blog_agent.services.checkpointer import create_checkpointer
+
     handle = create_checkpointer(tmp_path / "checkpoints.sqlite")
     run_id = "test-sequential-resume-func"
 
@@ -389,21 +397,26 @@ def test_sequential_interrupt_resumes_via_resume_function(tmp_path):
         raise RouterReached("router_reached")
 
     from blog_agent.graph import main_graph
+
     original_app = main_graph.app
     original_handle = main_graph._checkpointer_handle
 
     main_graph._checkpointer_handle = handle
 
     try:
-        with patch(
-            "blog_agent.nodes.intent_gateway.analyze_intent",
-            side_effect=[first_analysis, second_analysis],
-        ), patch(
-            "blog_agent.nodes.intent_gateway.generate_proposed_topic",
-            return_value="Proposed RAG Pipeline Topic",
-        ), patch(
-            "blog_agent.graph.main_graph.router_node",
-            side_effect=mock_router,
+        with (
+            patch(
+                "blog_agent.nodes.intent_gateway.analyze_intent",
+                side_effect=[first_analysis, second_analysis],
+            ),
+            patch(
+                "blog_agent.nodes.intent_gateway.generate_proposed_topic",
+                return_value="Proposed RAG Pipeline Topic",
+            ),
+            patch(
+                "blog_agent.graph.main_graph.router_node",
+                side_effect=mock_router,
+            ),
         ):
             main_graph.app = main_graph.build_graph(handle.saver)
             initial_state = {
@@ -468,4 +481,3 @@ def test_sequential_interrupt_resumes_via_resume_function(tmp_path):
         main_graph.app = original_app
         main_graph._checkpointer_handle = original_handle
         handle.close()
-

@@ -1,16 +1,17 @@
 """Article and image artifact storage service supporting PostgreSQL and Cloudinary."""
+
 import json
 import logging
 import os
 import shutil
 from pathlib import Path
-from typing import Optional, Any, List, Dict
+from typing import Any
 from uuid import uuid4
 
 from blog_agent.services.cloudinary_storage import (
+    delete_cloudinary_assets,
     is_cloudinary_configured,
     upload_run_image,
-    delete_cloudinary_assets,
 )
 from blog_agent.services.markdown import safe_blog_filename
 from blog_agent.services.protocols import ArticleRepository, ImageStorage
@@ -28,7 +29,7 @@ def extract_article_excerpt(markdown: str, max_chars: int = 250) -> str:
     to use as a card excerpt without calling an extra LLM.
     """
     lines = markdown.splitlines()
-    paragraph_lines: List[str] = []
+    paragraph_lines: list[str] = []
     in_code_block = False
 
     for line in lines:
@@ -43,12 +44,7 @@ def extract_article_excerpt(markdown: str, max_chars: int = 250) -> str:
                 break
             continue
         # Skip headings, images, horizontal rules, blockquotes
-        if (
-            stripped.startswith("#")
-            or stripped.startswith("![")
-            or stripped.startswith("---")
-            or stripped.startswith(">")
-        ):
+        if stripped.startswith(("#", "![", "---", ">")):
             if paragraph_lines:
                 break
             continue
@@ -56,7 +52,11 @@ def extract_article_excerpt(markdown: str, max_chars: int = 250) -> str:
 
     excerpt = " ".join(paragraph_lines).strip()
     if not excerpt:
-        clean_text = "\n".join(l for l in lines if not l.strip().startswith("#") and not l.strip().startswith("```")).strip()
+        clean_text = "\n".join(
+            l
+            for l in lines
+            if not l.strip().startswith("#") and not l.strip().startswith("```")
+        ).strip()
         excerpt = clean_text[:max_chars] if clean_text else markdown.strip()[:max_chars]
     elif len(excerpt) > max_chars:
         excerpt = excerpt[:max_chars].rstrip() + "..."
@@ -87,7 +87,9 @@ def convert_markdown_asset_routes(
         elif f"/images/{filename}" in final_markdown:
             final_markdown = final_markdown.replace(f"/images/{filename}", asset_route)
         elif f"../images/{filename}" in final_markdown:
-            final_markdown = final_markdown.replace(f"../images/{filename}", asset_route)
+            final_markdown = final_markdown.replace(
+                f"../images/{filename}", asset_route
+            )
         elif filename in final_markdown:
             final_markdown = final_markdown.replace(filename, asset_route)
         else:
@@ -127,9 +129,9 @@ def publish_blog(
     markdown: str,
     run_id: str,
     image_results: list[dict],
-    article_repo: Optional[ArticleRepository] = None,
-    image_storage: Optional[ImageStorage] = None,
-    db_session: Optional[Any] = None,
+    article_repo: ArticleRepository | None = None,
+    image_storage: ImageStorage | None = None,
+    db_session: Any | None = None,
 ) -> Path:
     """
     Publishes final article Markdown and images across PostgreSQL + Cloudinary and local disk.
@@ -181,9 +183,9 @@ def publish_blog(
         prepared_images.append((result, source, destination))
 
     # Build asset manifest & upload images if image_storage or Cloudinary is configured
-    asset_manifest: List[Dict[str, Any]] = []
-    uploaded_pids: List[str] = []
-    published_local_files: List[Path] = []
+    asset_manifest: list[dict[str, Any]] = []
+    uploaded_pids: list[str] = []
+    published_local_files: list[Path] = []
 
     # Transform markdown image references to application asset route for database persistence
     final_markdown = convert_markdown_asset_routes(markdown, run_id, image_results)
@@ -204,7 +206,9 @@ def publish_blog(
                     alt_text=alt_text,
                 )
                 if not image_storage.verify_image(upload_res):
-                    raise RuntimeError(f"Image storage verification failed for {filename}")
+                    raise RuntimeError(
+                        f"Image storage verification failed for {filename}"
+                    )
                 uploaded_pids.append(upload_res["public_id"])
                 asset_manifest.append(upload_res)
             elif use_cloudinary:
@@ -217,13 +221,15 @@ def publish_blog(
                 uploaded_pids.append(upload_res["public_id"])
                 asset_manifest.append(upload_res)
             else:
-                asset_manifest.append({
-                    "filename": filename,
-                    "public_id": f"local:{run_id}:{filename}",
-                    "format": Path(filename).suffix.lstrip("."),
-                    "bytes": len(image_bytes),
-                    "alt_text": alt_text,
-                })
+                asset_manifest.append(
+                    {
+                        "filename": filename,
+                        "public_id": f"local:{run_id}:{filename}",
+                        "format": Path(filename).suffix.lstrip("."),
+                        "bytes": len(image_bytes),
+                        "alt_text": alt_text,
+                    }
+                )
 
             # Also maintain local file copy for local CLI/testing
             dest_existed = destination.exists()
@@ -249,6 +255,7 @@ def publish_blog(
         elif db_session is not None:
             # Backward-compatibility fallback for tests passing raw db_session
             from sqlalchemy import text
+
             db_session.execute(
                 text(
                     "UPDATE runs SET article_title = :title, article_markdown = :markdown, "

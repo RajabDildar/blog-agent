@@ -5,16 +5,7 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, Send
 
-from blog_agent.nodes.intent_gateway import (
-    blocked_terminal_node,
-    cancelled_terminal_node,
-    invalid_terminal_node,
-    intent_gateway_node,
-)
-from blog_agent.schemas.models import IntentHumanResponse
-
 from blog_agent.config.settings import (
-    CHECKPOINT_SQLITE_PATH,
     MAX_ARTICLE_REPAIRS,
     MAX_EDITORIAL_REVISIONS,
     provider_retry_policy,
@@ -28,6 +19,12 @@ from blog_agent.nodes.citation_verifier import (
 from blog_agent.nodes.editor import editor_node
 from blog_agent.nodes.image_generator import generate_images_node
 from blog_agent.nodes.image_planner import image_planner_node
+from blog_agent.nodes.intent_gateway import (
+    blocked_terminal_node,
+    cancelled_terminal_node,
+    intent_gateway_node,
+    invalid_terminal_node,
+)
 from blog_agent.nodes.merger import merge_content
 from blog_agent.nodes.orchestrator import orchestrator_node
 from blog_agent.nodes.repair import repair_node
@@ -38,12 +35,13 @@ from blog_agent.nodes.save import save_node
 from blog_agent.nodes.validator import validator_node
 from blog_agent.nodes.worker import worker_node
 from blog_agent.schemas.context import RunContext
+from blog_agent.schemas.models import IntentHumanResponse
 from blog_agent.schemas.state import State
-from blog_agent.services.protocols import ArticleRepository, ImageStorage
 from blog_agent.services.checkpointer import (
     CheckpointerHandle,
     create_checkpointer,
 )
+from blog_agent.services.protocols import ArticleRepository, ImageStorage
 from blog_agent.services.rate_limits import (
     RateLimitRetryExhausted,
     get_provider_retry_delay_seconds,
@@ -324,9 +322,7 @@ def citation_release_gate_failure_node(
     state: State,
 ) -> dict:
     issues = [
-        issue
-        for issue in state.get("citation_issues", [])
-        if issue.severity == "high"
+        issue for issue in state.get("citation_issues", []) if issue.severity == "high"
     ]
 
     raise RuntimeError(
@@ -765,9 +761,7 @@ def run(
 ):
     active_handle = checkpointer_handle or _checkpointer_handle
     active_app = (
-        build_graph(active_handle.saver)
-        if checkpointer_handle is not None
-        else app
+        build_graph(active_handle.saver) if checkpointer_handle is not None else app
     )
 
     if run_id is None:
@@ -871,9 +865,7 @@ def resume(
 ):
     active_handle = checkpointer_handle or _checkpointer_handle
     active_app = (
-        build_graph(active_handle.saver)
-        if checkpointer_handle is not None
-        else app
+        build_graph(active_handle.saver) if checkpointer_handle is not None else app
     )
 
     config = {
@@ -997,4 +989,3 @@ def resume(
     )
 
     return result
-

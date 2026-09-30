@@ -1,4 +1,5 @@
 from unittest.mock import MagicMock, patch
+
 import pytest
 
 from blog_agent.nodes.intent_gateway import intent_gateway_node
@@ -23,12 +24,15 @@ def test_gemini_success_does_not_call_groq():
 
     mock_groq_llm = MagicMock()
 
-    with patch(
-        "blog_agent.services.intent_analysis.get_gemini_intent_llm",
-        return_value=mock_gemini_llm,
-    ), patch(
-        "blog_agent.services.intent_analysis.get_groq_intent_llm",
-        return_value=mock_groq_llm,
+    with (
+        patch(
+            "blog_agent.services.intent_analysis.get_gemini_intent_llm",
+            return_value=mock_gemini_llm,
+        ),
+        patch(
+            "blog_agent.services.intent_analysis.get_groq_intent_llm",
+            return_value=mock_groq_llm,
+        ),
     ):
         result = analyze_intent("event-driven systems")
 
@@ -54,12 +58,15 @@ def test_gemini_failure_triggers_groq_fallback():
     mock_groq_structured.invoke.return_value = mock_groq_result
     mock_groq_llm.with_structured_output.return_value = mock_groq_structured
 
-    with patch(
-        "blog_agent.services.intent_analysis.get_gemini_intent_llm",
-        return_value=mock_gemini_llm,
-    ), patch(
-        "blog_agent.services.intent_analysis.get_groq_intent_llm",
-        return_value=mock_groq_llm,
+    with (
+        patch(
+            "blog_agent.services.intent_analysis.get_gemini_intent_llm",
+            return_value=mock_gemini_llm,
+        ),
+        patch(
+            "blog_agent.services.intent_analysis.get_groq_intent_llm",
+            return_value=mock_groq_llm,
+        ),
     ):
         result = analyze_intent("event-driven systems")
 
@@ -88,12 +95,15 @@ def test_gemini_validation_error_triggers_groq_fallback():
     mock_groq_structured.invoke.return_value = mock_groq_result
     mock_groq_llm.with_structured_output.return_value = mock_groq_structured
 
-    with patch(
-        "blog_agent.services.intent_analysis.get_gemini_intent_llm",
-        return_value=mock_gemini_llm,
-    ), patch(
-        "blog_agent.services.intent_analysis.get_groq_intent_llm",
-        return_value=mock_groq_llm,
+    with (
+        patch(
+            "blog_agent.services.intent_analysis.get_gemini_intent_llm",
+            return_value=mock_gemini_llm,
+        ),
+        patch(
+            "blog_agent.services.intent_analysis.get_groq_intent_llm",
+            return_value=mock_groq_llm,
+        ),
     ):
         result = analyze_intent("event-driven systems")
 
@@ -113,15 +123,18 @@ def test_both_providers_fail_raises_intent_analysis_unavailable():
     mock_groq_structured.invoke.side_effect = RuntimeError("Groq Down")
     mock_groq_llm.with_structured_output.return_value = mock_groq_structured
 
-    with patch(
-        "blog_agent.services.intent_analysis.get_gemini_intent_llm",
-        return_value=mock_gemini_llm,
-    ), patch(
-        "blog_agent.services.intent_analysis.get_groq_intent_llm",
-        return_value=mock_groq_llm,
+    with (
+        patch(
+            "blog_agent.services.intent_analysis.get_gemini_intent_llm",
+            return_value=mock_gemini_llm,
+        ),
+        patch(
+            "blog_agent.services.intent_analysis.get_groq_intent_llm",
+            return_value=mock_groq_llm,
+        ),
+        pytest.raises(IntentAnalysisUnavailable) as exc_info,
     ):
-        with pytest.raises(IntentAnalysisUnavailable) as exc_info:
-            analyze_intent("event-driven systems")
+        analyze_intent("event-driven systems")
 
     assert "All intent analysis providers failed" in str(exc_info.value)
 

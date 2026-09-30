@@ -1,9 +1,10 @@
 """Opaque session management with SHA-256 token hashing."""
+
 import hashlib
 import secrets
 import uuid
-from datetime import datetime, timezone, timedelta
-from typing import Optional, Tuple
+from datetime import UTC, datetime, timedelta
+
 from fastapi import Request, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
@@ -27,8 +28,8 @@ def generate_session_token() -> str:
 def create_session(
     db: DbSession,
     user_id: str,
-    max_age_seconds: Optional[int] = None,
-) -> Tuple[Session, str]:
+    max_age_seconds: int | None = None,
+) -> tuple[Session, str]:
     """
     Creates an opaque session record in the database.
     Returns the session model instance and the raw unhashed token to send to the client.
@@ -38,7 +39,7 @@ def create_session(
 
     raw_token = generate_session_token()
     token_h = hash_token(raw_token)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expires_at = now + timedelta(seconds=max_age_seconds)
 
     session = Session(
@@ -57,7 +58,7 @@ def create_session(
 def get_session_and_user_by_token(
     db: DbSession,
     raw_token: str,
-) -> Tuple[Optional[Session], Optional[User]]:
+) -> tuple[Session | None, User | None]:
     """
     Looks up an active session by raw token.
     Updates `last_used_at` if found and not expired.
@@ -67,7 +68,7 @@ def get_session_and_user_by_token(
         return None, None
 
     token_h = hash_token(raw_token)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     stmt = select(Session).where(Session.token_hash == token_h)
     session = db.scalar(stmt)
@@ -104,8 +105,8 @@ def revoke_session(db: DbSession, raw_token: str) -> bool:
 def set_session_cookie(
     response: Response,
     raw_token: str,
-    max_age_seconds: Optional[int] = None,
-    secure: Optional[bool] = None,
+    max_age_seconds: int | None = None,
+    secure: bool | None = None,
 ) -> None:
     """Sets the HttpOnly session cookie."""
     if max_age_seconds is None:
@@ -136,7 +137,7 @@ def clear_session_cookie(response: Response) -> None:
 def set_anonymous_cookie(
     response: Response,
     anonymous_id: str,
-    secure: Optional[bool] = None,
+    secure: bool | None = None,
 ) -> None:
     """Sets the anonymous user cookie."""
     if secure is None:
@@ -157,8 +158,8 @@ def set_anonymous_cookie(
 
 def get_or_create_anonymous_id(
     request: Request,
-    response: Optional[Response] = None,
-    secure: Optional[bool] = None,
+    response: Response | None = None,
+    secure: bool | None = None,
 ) -> str:
     """
     Extracts the anonymous cookie or creates a new opaque UUID identifier.

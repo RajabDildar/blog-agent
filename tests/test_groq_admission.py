@@ -105,9 +105,8 @@ def test_exception_releases_concurrency_slot():
         max_concurrent_generations=1,
     )
 
-    with pytest.raises(RuntimeError):
-        with controller.generation():
-            raise RuntimeError("provider failed")
+    with pytest.raises(RuntimeError), controller.generation():
+        raise RuntimeError("provider failed")
 
     acquired = threading.Event()
 

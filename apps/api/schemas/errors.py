@@ -1,13 +1,13 @@
 """Standardized error schemas and response helper for API contract (Section 16)."""
-from typing import Optional
-from pydantic import BaseModel
+
 from fastapi import HTTPException
+from pydantic import BaseModel
 
 
 class ErrorDetail(BaseModel):
     code: str
     message: str
-    run_id: Optional[str] = None
+    run_id: str | None = None
 
 
 class ErrorResponse(BaseModel):
@@ -18,8 +18,8 @@ def error_response(
     status_code: int,
     code: str,
     message: str,
-    run_id: Optional[str] = None,
-    headers: Optional[dict] = None,
+    run_id: str | None = None,
+    headers: dict | None = None,
 ) -> HTTPException:
     """Builds a standard HTTPException adhering to {"error": {"code", "message", "run_id"}}."""
     return HTTPException(

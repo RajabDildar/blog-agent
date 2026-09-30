@@ -1,11 +1,12 @@
 from logging.config import fileConfig
-from sqlalchemy import engine_from_config, pool
-from alembic import context
 
-from apps.api.config import get_settings
-from apps.api.db.base import Base
+from alembic import context
+from sqlalchemy import engine_from_config, pool
+
 # Import models to ensure they are registered with Base.metadata
 import apps.api.db.models  # noqa: F401
+from apps.api.config import get_settings
+from apps.api.db.base import Base
 
 config = context.config
 
@@ -21,12 +22,7 @@ def include_object(object, name, type_, reflected, compare_to):
     LangGraph checkpoint tables (checkpoint*, langgraph*) are managed separately
     by LangGraph setup and must never appear in Alembic migrations.
     """
-    if type_ == "table" and (
-        name.startswith("checkpoint")
-        or name.startswith("langgraph")
-    ):
-        return False
-    return True
+    return not (type_ == "table" and (name.startswith(("checkpoint", "langgraph"))))
 
 
 def get_url():

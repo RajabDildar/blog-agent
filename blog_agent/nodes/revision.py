@@ -40,11 +40,10 @@ def _revision_citation_block(
             "- Do NOT add external citation links.\n"
         )
 
-    url_lines = "\n".join(
-        f"  * {e.url}  ({e.source_title})"
-        for e in evidence
-        if e.url
-    ) or "  (no evidence assigned)"
+    url_lines = (
+        "\n".join(f"  * {e.url}  ({e.source_title})" for e in evidence if e.url)
+        or "  (no evidence assigned)"
+    )
 
     return (
         "CITATION REQUIREMENTS (MANDATORY):\n"
@@ -104,8 +103,7 @@ def revision_node(
                     f"Editor issues:\n"
                     f"{[i.model_dump() for i in issues]}\n\n"
                     f"Assigned evidence:\n"
-                    f"{evidence_text}\n\n"
-                    + _revision_citation_block(task, evidence)
+                    f"{evidence_text}\n\n" + _revision_citation_block(task, evidence)
                 )
             ),
         ],
@@ -126,7 +124,7 @@ def revision_node(
             scope="section",
             expected_title=task.title,
         ),
-            diagnostics=diagnostics,
+        diagnostics=diagnostics,
     )
 
     if gate.errors:

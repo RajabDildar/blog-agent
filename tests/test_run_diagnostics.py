@@ -2,6 +2,8 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from blog_agent.services.rate_limits import (
     RateLimitInfo,
     RateLimitRetryExhausted,
@@ -426,7 +428,7 @@ def test_instrument_node_stops_long_groq_rate_limit_retry(
         provider="groq",
     )
 
-    try:
+    with pytest.raises(RateLimitRetryExhausted) as exc_info:
         wrapped(
             {},
             FakeRuntime(
@@ -434,17 +436,7 @@ def test_instrument_node_stops_long_groq_rate_limit_retry(
                 node_attempt=1,
             ),
         )
-    except Exception as exc:
-        assert isinstance(
-            exc,
-            RateLimitRetryExhausted,
-        )
-        assert isinstance(
-            exc.__cause__,
-            FakeRateLimitError,
-        )
-    else:
-        raise AssertionError("Expected RateLimitRetryExhausted")
+    assert isinstance(exc_info.value.__cause__, FakeRateLimitError)
 
     assert slept == []
 
@@ -486,7 +478,7 @@ def test_instrument_node_does_not_sleep_on_final_rate_limit_attempt(
         provider="groq",
     )
 
-    try:
+    with pytest.raises(RateLimitRetryExhausted) as exc_info:
         wrapped(
             {},
             FakeRuntime(
@@ -494,17 +486,7 @@ def test_instrument_node_does_not_sleep_on_final_rate_limit_attempt(
                 node_attempt=4,
             ),
         )
-    except Exception as exc:
-        assert isinstance(
-            exc,
-            RateLimitRetryExhausted,
-        )
-        assert isinstance(
-            exc.__cause__,
-            FakeRateLimitError,
-        )
-    else:
-        raise AssertionError("Expected RateLimitRetryExhausted")
+    assert isinstance(exc_info.value.__cause__, FakeRateLimitError)
 
     assert slept == []
 
@@ -610,7 +592,9 @@ def test_record_provider_call_counts_actual_invocations_separately_from_node_att
     diagnostics.finish_success({})
 
     data = json.loads(
-        Path("runs", "provider-calls-test", "diagnostics.json").read_text(encoding="utf-8")
+        Path("runs", "provider-calls-test", "diagnostics.json").read_text(
+            encoding="utf-8"
+        )
     )
 
     # provider_calls tracks actual invocations.

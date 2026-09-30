@@ -16,21 +16,15 @@ ATX_HEADING_RE = re.compile(
 )
 
 # Matches  【[Anchor Text](url)】  — full-width bracket around a Markdown link.
-_BRACKET_MD_LINK_RE = re.compile(
-    r"【\s*(\[[^\]]+\]\([^\)]+\))\s*】"
-)
+_BRACKET_MD_LINK_RE = re.compile(r"【\s*(\[[^\]]+\]\([^\)]+\))\s*】")
 
 # Matches  【https://...】  — bare URL inside full-width brackets.
-_BRACKET_RAW_URL_RE = re.compile(
-    r"【\s*(https?://[^\s】\)]+)\s*】"
-)
+_BRACKET_RAW_URL_RE = re.compile(r"【\s*(https?://[^\s】\)]+)\s*】")
 
 # Matches a footnote definition line at the start of a (possibly stripped) line:
 #   [^label]: ...URL...
 # Also handles the escaped form  \[^label\]: ...  that some models emit.
-_FOOTNOTE_DEF_RE = re.compile(
-    r"^\\?\[\^([^\]]+)\\?\]:\s*(.*)$"
-)
+_FOOTNOTE_DEF_RE = re.compile(r"^\\?\[\^([^\]]+)\\?\]:\s*(.*)$")
 
 # Matches a URL inside any surrounding text.
 _URL_IN_TEXT_RE = re.compile(r"https?://[^\s\)\>\]\【】]+")
@@ -66,9 +60,7 @@ def normalize_citation_artifacts(
     text = _BRACKET_MD_LINK_RE.sub(r"\1", markdown)
 
     # --- Pass 2: 【https://...】 → [Source](url) ---
-    text = _BRACKET_RAW_URL_RE.sub(
-        lambda m: f"[Source]({m.group(1)})", text
-    )
+    text = _BRACKET_RAW_URL_RE.sub(lambda m: f"[Source]({m.group(1)})", text)
 
     # --- Pass 3: inline footnotes ---
     footnote_urls: dict[str, str] = {}
@@ -90,9 +82,7 @@ def normalize_citation_artifacts(
 
     # Replace every in-text reference [^label] or \[^label\] with [Source](url).
     for label, url in footnote_urls.items():
-        ref_re = re.compile(
-            r"\\?\[\^" + re.escape(label) + r"\\?\]"
-        )
+        ref_re = re.compile(r"\\?\[\^" + re.escape(label) + r"\\?\]")
         text = ref_re.sub(f"[Source]({url})", text)
 
     return text

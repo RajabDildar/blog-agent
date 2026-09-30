@@ -10,9 +10,9 @@ from langchain_core.messages import (
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from blog_agent.config.settings import EVAL_JUDGE_MODEL
-from eval.models import EvaluationResult
 from blog_agent.prompts.evaluator import EVALUATION_SYSTEM
 from blog_agent.schemas.models import Plan
+from eval.models import EvaluationResult
 
 judge_llm = ChatGoogleGenerativeAI(
     model=EVAL_JUDGE_MODEL,
@@ -114,7 +114,9 @@ def extract_evidence_metrics(
             unknown_count += 1
 
         authority_bucket = f"{item.authority_score:.1f}"
-        authority_distribution[authority_bucket] = authority_distribution.get(authority_bucket, 0) + 1
+        authority_distribution[authority_bucket] = (
+            authority_distribution.get(authority_bucket, 0) + 1
+        )
 
         if item.support_strength == "weak":
             weak_count += 1

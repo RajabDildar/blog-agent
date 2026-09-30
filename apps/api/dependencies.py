@@ -1,18 +1,23 @@
 """FastAPI route dependencies for database, authentication, anonymous identity, and CSRF."""
-from typing import Optional, Generator
-from fastapi import Depends, Request, Response, HTTPException, status
+
+from collections.abc import Generator
+
+from fastapi import Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
-from apps.api.config import get_settings
-from apps.api.db.session import SessionLocal
-from apps.api.db.models import User
-from apps.api.auth.sessions import get_session_and_user_by_token, get_or_create_anonymous_id
 from apps.api.auth.csrf import validate_csrf
+from apps.api.auth.sessions import (
+    get_or_create_anonymous_id,
+    get_session_and_user_by_token,
+)
+from apps.api.config import get_settings
+from apps.api.db.models import User
+from apps.api.db.session import SessionLocal
 
 settings = get_settings()
 
 
-def get_db() -> Generator[Session, None, None]:
+def get_db() -> Generator[Session]:
     """Yields a database session per request."""
     db = SessionLocal()
     try:
@@ -24,7 +29,7 @@ def get_db() -> Generator[Session, None, None]:
 def get_current_user_optional(
     request: Request,
     db: Session = Depends(get_db),
-) -> Optional[User]:
+) -> User | None:
     """
     Extracts user from opaque session cookie if valid and not expired.
     Returns None if unauthenticated.
@@ -33,12 +38,12 @@ def get_current_user_optional(
     if not raw_token:
         return None
 
-    session_row, user = get_session_and_user_by_token(db, raw_token)
+    _session_row, user = get_session_and_user_by_token(db, raw_token)
     return user
 
 
 def get_current_user(
-    user: Optional[User] = Depends(get_current_user_optional),
+    user: User | None = Depends(get_current_user_optional),
 ) -> User:
     """Enforces that the request is made by an authenticated user."""
     if not user:

@@ -22,7 +22,6 @@ def test_hyphenated_uuid_run_id_is_valid():
     assert run_images_dir(hyphenated_id) == Path("runs") / hyphenated_id / "images"
 
 
-
 def test_staged_image_path_is_inside_run_directory():
     assert (
         staged_image_path(

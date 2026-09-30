@@ -1,9 +1,11 @@
 """Inngest functions defining durable execution steps for Blog Agent runs and maintenance."""
+
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime
+from typing import Any
+
 import inngest
 from sqlalchemy import select, update
 
@@ -11,22 +13,29 @@ from apps.api.config import get_settings
 from apps.api.db.models import Run, RunStatus
 from apps.api.inngest.client import inngest_client
 from apps.api.maintenance.cleanup_expired_runs import cleanup_expired_runs
-from apps.api.services.diagnostics_sink import PostgresDiagnosticsSink, WorkerSessionLocal
-from apps.api.services.quota_service import reserve_generation_quota_atomic
 from apps.api.services.article_repository import PostgresArticleRepository
-from blog_agent import run as agent_run, resume as agent_resume
+from apps.api.services.diagnostics_sink import (
+    PostgresDiagnosticsSink,
+    WorkerSessionLocal,
+)
+from apps.api.services.quota_service import reserve_generation_quota_atomic
+from blog_agent import resume as agent_resume
+from blog_agent import run as agent_run
 from blog_agent.schemas.models import IntentHumanResponse
 from blog_agent.services.checkpointer import create_checkpointer
-from blog_agent.services.cloudinary_storage import CloudinaryImageStorage, is_cloudinary_configured
+from blog_agent.services.cloudinary_storage import (
+    CloudinaryImageStorage,
+    is_cloudinary_configured,
+)
 from blog_agent.services.rate_limits import RateLimitRetryExhausted
 
 logger = logging.getLogger("blog_agent.inngest_functions")
 settings = get_settings()
 
 
-def _get_interrupt_payload(checkpointer_handle, run_id: str) -> Optional[dict[str, Any]]:
+def _get_interrupt_payload(checkpointer_handle, run_id: str) -> dict[str, Any] | None:
     """Inspects checkpointer state to extract pending interrupt payload if present."""
-    from blog_agent.graph.main_graph import build_graph, _thread_config
+    from blog_agent.graph.main_graph import _thread_config, build_graph
 
     graph = build_graph(checkpointer_handle.saver)
     state = graph.get_state(_thread_config(run_id))
@@ -42,13 +51,17 @@ def _get_interrupt_payload(checkpointer_handle, run_id: str) -> Optional[dict[st
 def execute_start_run(run_id: str) -> dict[str, Any]:
     """Synchronous execution step for starting a queued run."""
     with WorkerSessionLocal() as session:
-        run_record = session.scalar(select(Run).where(Run.id == run_id).with_for_update())
+        run_record = session.scalar(
+            select(Run).where(Run.id == run_id).with_for_update()
+        )
         if not run_record:
             logger.error(f"Run {run_id} not found in database.")
             return {"status": "error", "error": "not_found"}
 
         if run_record.status not in (RunStatus.QUEUED.value, RunStatus.RUNNING.value):
-            logger.warning(f"Run {run_id} is in status '{run_record.status}', skipping start.")
+            logger.warning(
+                f"Run {run_id} is in status '{run_record.status}', skipping start."
+            )
             return {"status": "skipped", "current_status": run_record.status}
 
         run_record.status = RunStatus.RUNNING.value
@@ -75,7 +88,7 @@ def execute_start_run(run_id: str) -> dict[str, Any]:
         _handle_rate_limit_pause(run_id, exc)
         return {"status": "paused", "run_id": run_id}
     except Exception as exc:
-        logger.exception(f"Run {run_id} failed with exception: {exc}")
+        logger.exception(f"Run {run_id} failed")
         _handle_run_failure(run_id, exc)
         return {"status": "failed", "run_id": run_id, "error": str(exc)}
     finally:
@@ -83,18 +96,26 @@ def execute_start_run(run_id: str) -> dict[str, Any]:
             handle.close()
 
 
-def execute_resume_run(run_id: str, human_response: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+def execute_resume_run(
+    run_id: str, human_response: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """Synchronous execution step for resuming an interrupted or paused run."""
     parsed_response = None
     if human_response:
         try:
             parsed_response = IntentHumanResponse.model_validate(human_response)
         except Exception as exc:
-            logger.exception(f"Invalid human response payload for run {run_id}: {exc}")
-            return {"status": "error", "error": "invalid_human_response", "detail": str(exc)}
+            logger.exception(f"Invalid human response payload for run {run_id}")
+            return {
+                "status": "error",
+                "error": "invalid_human_response",
+                "detail": str(exc),
+            }
 
     with WorkerSessionLocal() as session:
-        run_record = session.scalar(select(Run).where(Run.id == run_id).with_for_update())
+        run_record = session.scalar(
+            select(Run).where(Run.id == run_id).with_for_update()
+        )
         if not run_record:
             logger.error(f"Run {run_id} not found in database.")
             return {"status": "error", "error": "not_found"}
@@ -122,7 +143,7 @@ def execute_resume_run(run_id: str, human_response: Optional[dict[str, Any]] = N
         _handle_rate_limit_pause(run_id, exc)
         return {"status": "paused", "run_id": run_id}
     except Exception as exc:
-        logger.exception(f"Resume for run {run_id} failed with exception: {exc}")
+        logger.exception(f"Resume for run {run_id} failed")
         _handle_run_failure(run_id, exc)
         return {"status": "failed", "run_id": run_id, "error": str(exc)}
     finally:
@@ -189,14 +210,14 @@ def _handle_run_outcome(run_id: str, result: dict[str, Any], handle) -> None:
 
         # Graph ran to completion
         run.status = RunStatus.COMPLETED.value
-        run.completed_at = datetime.now(timezone.utc)
+        run.completed_at = datetime.now(UTC)
         session.commit()
 
 
 def _handle_rate_limit_pause(run_id: str, exc: RateLimitRetryExhausted) -> None:
     """Updates run to paused status with resume_after timestamp."""
     resume_after_dt = (
-        datetime.fromtimestamp(exc.resume_after, tz=timezone.utc)
+        datetime.fromtimestamp(exc.resume_after, tz=UTC)
         if getattr(exc, "resume_after", None)
         else None
     )
@@ -232,6 +253,7 @@ def _handle_run_failure(run_id: str, exc: Exception) -> None:
 # ---------------------------------------------------------------------------
 # Inngest Function Definitions
 # ---------------------------------------------------------------------------
+
 
 @inngest_client.create_function(
     fn_id="blog-agent-start-run",
@@ -270,7 +292,9 @@ def resume_run_fn(ctx: inngest.ContextSync, step: inngest.StepSync) -> dict[str,
     trigger=inngest.TriggerCron(cron="0 * * * *"),
     retries=1,
 )
-def cleanup_expired_runs_fn(ctx: inngest.ContextSync, step: inngest.StepSync) -> dict[str, Any]:
+def cleanup_expired_runs_fn(
+    ctx: inngest.ContextSync, step: inngest.StepSync
+) -> dict[str, Any]:
     """Inngest cron function running hourly UTC to clean up expired anonymous runs and rate limit buckets."""
     purged_count = step.run("purge-expired", lambda: cleanup_expired_runs())
     return {"status": "ok", "purged_count": purged_count}

@@ -138,7 +138,7 @@ def _parse_published_at(
     if parsed is None:
         try:
             parsed = parsedate_to_datetime(published_at)
-        except (ValueError, TypeError, IndexError, OverflowError):
+        except ValueError, TypeError, IndexError, OverflowError:
             parsed = None
 
     if parsed is None:
@@ -546,7 +546,7 @@ def research_node(
         ]
     )
 
-    grounded_evidence, grounding_diag = ground_extracted_evidence(
+    grounded_evidence, _grounding_diag = ground_extracted_evidence(
         pack,
         quality_results,
     )

@@ -9,16 +9,28 @@ from pathlib import Path
 
 from blog_agent.config.settings import (
     EVAL_BETWEEN_RUN_DELAY_SECONDS,
+    EVAL_JUDGE_MODEL,
     EVAL_MAX_RATE_LIMIT_WAIT_SECONDS,
     EVAL_RESUME_ATTEMPT_LIMIT,
-    EVAL_JUDGE_MODEL,
     GEMINI_MODEL,
     REVISION_MODEL,
     WRITER_MODEL,
 )
+from blog_agent.graph.main_graph import (
+    generate_run_id,
+    resume,
+    run,
+)
+from blog_agent.services.citation_verification import verify_citations
+from blog_agent.services.rate_limits import (
+    RateLimitRetryExhausted,
+)
+from blog_agent.services.run_diagnostics import (
+    load_diagnostics,
+)
 from eval.models import (
-    EvaluationMetrics,
     EvaluationManifest,
+    EvaluationMetrics,
     EvaluationRun,
 )
 from eval.report import (
@@ -29,18 +41,6 @@ from eval.score import (
     evaluate_article,
     extract_metrics,
 )
-from blog_agent.graph.main_graph import (
-    generate_run_id,
-    resume,
-    run,
-)
-from blog_agent.services.rate_limits import (
-    RateLimitRetryExhausted,
-)
-from blog_agent.services.run_diagnostics import (
-    load_diagnostics,
-)
-from blog_agent.services.citation_verification import verify_citations
 
 DEFAULT_TOPICS_PATH = Path(__file__).parent / "topics.json"
 
@@ -52,7 +52,10 @@ def _utc_now() -> datetime:
 
 
 def _locked_versions() -> dict[str, str]:
-    return {name: version(name) for name in ("langchain-google-genai", "pydantic", "tavily-python")}
+    return {
+        name: version(name)
+        for name in ("langchain-google-genai", "pydantic", "tavily-python")
+    }
 
 
 def _experiment_dir(experiment_name: str) -> Path:
@@ -63,10 +66,14 @@ def _experiment_dir(experiment_name: str) -> Path:
 
 def _write_manifest(output_dir: Path, manifest: EvaluationManifest) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / "manifest.json").write_text(manifest.model_dump_json(indent=2), encoding="utf-8")
+    (output_dir / "manifest.json").write_text(
+        manifest.model_dump_json(indent=2), encoding="utf-8"
+    )
 
 
-def _copy_artifacts(*, output_dir: Path, run_id: str, result: dict, diagnostics: dict) -> tuple[str, str]:
+def _copy_artifacts(
+    *, output_dir: Path, run_id: str, result: dict, diagnostics: dict
+) -> tuple[str, str]:
     articles_dir = output_dir / "articles"
     diagnostics_dir = output_dir / "diagnostics"
     articles_dir.mkdir(parents=True, exist_ok=True)
@@ -74,7 +81,9 @@ def _copy_artifacts(*, output_dir: Path, run_id: str, result: dict, diagnostics:
     destination_article = articles_dir / f"{run_id}.md"
     destination_article.write_text(result["final"], encoding="utf-8")
     destination_diagnostics = diagnostics_dir / f"{run_id}.json"
-    destination_diagnostics.write_text(json.dumps(diagnostics, indent=2), encoding="utf-8")
+    destination_diagnostics.write_text(
+        json.dumps(diagnostics, indent=2), encoding="utf-8"
+    )
     return str(destination_article), str(destination_diagnostics)
 
 
@@ -82,7 +91,9 @@ def _image_paths(result: dict) -> list[Path]:
     paths = [Path(image["published_path"]) for image in result.get("image_results", [])]
     missing = [path for path in paths if not path.is_file()]
     if missing:
-        raise RuntimeError(f"Generated images are unavailable for evaluation: {missing}")
+        raise RuntimeError(
+            f"Generated images are unavailable for evaluation: {missing}"
+        )
     return paths
 
 
@@ -96,7 +107,7 @@ def load_topics(
     )
 
     if not isinstance(data, list):
-        raise ValueError(
+        raise ValueError(  # noqa: TRY004 - Preserve the existing loader exception contract.
             "Evaluation topics must be a JSON list.",
         )
 
@@ -144,19 +155,46 @@ def _build_success_run(
             evidence=result.get("evidence", []),
         )
     )
-    citation_issues = verify_citations(markdown=result["final"], tasks=getattr(result["plan"], "tasks", []), evidence=result.get("evidence", []))
+    citation_issues = verify_citations(
+        markdown=result["final"],
+        tasks=getattr(result["plan"], "tasks", []),
+        evidence=result.get("evidence", []),
+    )
     metrics.citation_issue_counts = {}
     for issue in citation_issues:
         key = f"{issue.severity}:{issue.category}"
-        metrics.citation_issue_counts[key] = metrics.citation_issue_counts.get(key, 0) + 1
-    article_artifact, diagnostics_artifact = _copy_artifacts(output_dir=output_dir, run_id=run_id, result=result, diagnostics=diagnostics)
+        metrics.citation_issue_counts[key] = (
+            metrics.citation_issue_counts.get(key, 0) + 1
+        )
+    article_artifact, diagnostics_artifact = _copy_artifacts(
+        output_dir=output_dir, run_id=run_id, result=result, diagnostics=diagnostics
+    )
     try:
-        evaluation = evaluate_article(topic=topic, plan=result["plan"], article=result["final"], image_paths=_image_paths(result))
+        evaluation = evaluate_article(
+            topic=topic,
+            plan=result["plan"],
+            article=result["final"],
+            image_paths=_image_paths(result),
+        )
         metrics.judge_calls = 1
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - Evaluation records judge failures per topic.
         # Record that a judge call was attempted even though it failed.
         metrics.judge_calls = 1
-        return EvaluationRun(topic=topic, run_id=run_id, status="failed", article_path=result.get("saved_path"), metrics=metrics, failure=f"JudgeError: {type(exc).__name__}: {exc}", rate_limit_recoveries=rate_limit_recoveries, rate_limit_wait_seconds=rate_limit_wait_seconds, article_artifact=article_artifact, diagnostics_artifact=diagnostics_artifact, citation_issues=[issue.model_dump(mode="json") for issue in citation_issues])
+        return EvaluationRun(
+            topic=topic,
+            run_id=run_id,
+            status="failed",
+            article_path=result.get("saved_path"),
+            metrics=metrics,
+            failure=f"JudgeError: {type(exc).__name__}: {exc}",
+            rate_limit_recoveries=rate_limit_recoveries,
+            rate_limit_wait_seconds=rate_limit_wait_seconds,
+            article_artifact=article_artifact,
+            diagnostics_artifact=diagnostics_artifact,
+            citation_issues=[
+                issue.model_dump(mode="json") for issue in citation_issues
+            ],
+        )
 
     return EvaluationRun(
         topic=topic,
@@ -284,7 +322,7 @@ def _run_topic(
                     max_wait_seconds=max_rate_limit_wait_seconds,
                 )
 
-            except Exception as wait_exc:
+            except Exception as wait_exc:  # noqa: BLE001 - Evaluation records resume-wait failures per topic.
                 return _build_failure_run(
                     topic=topic,
                     run_id=run_id,
@@ -306,7 +344,7 @@ def _run_topic(
             except RateLimitRetryExhausted:
                 continue
 
-            except Exception as resume_exc:
+            except Exception as resume_exc:  # noqa: BLE001 - Evaluation records resume failures per topic.
                 return _build_failure_run(
                     topic=topic,
                     run_id=run_id,
@@ -315,7 +353,7 @@ def _run_topic(
                     rate_limit_wait_seconds=rate_limit_wait_seconds,
                 )
 
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - Evaluation isolates unexpected per-topic failures.
         return _build_failure_run(
             topic=topic,
             run_id=run_id,
@@ -356,15 +394,18 @@ def run_evaluation(
         completed_topics = {
             evaluation_run.topic
             for evaluation_run in runs
-            if evaluation_run.status == "success" and evaluation_run.evaluation is not None
+            if evaluation_run.status == "success"
+            and evaluation_run.evaluation is not None
         }
     else:
         completed_topics = {
             evaluation_run.topic
             for evaluation_run in runs
             if (
-                evaluation_run.status == "success" and evaluation_run.evaluation is not None
-            ) or evaluation_run.status == "failed"
+                evaluation_run.status == "success"
+                and evaluation_run.evaluation is not None
+            )
+            or evaluation_run.status == "failed"
         }
 
     topics_to_run = [topic for topic in topics if topic not in completed_topics]
@@ -448,7 +489,23 @@ def main():
     )
 
     output_dir = _experiment_dir(args.experiment_name)
-    manifest = EvaluationManifest(experiment_name=args.experiment_name, purpose=args.purpose, pipeline_commit=args.pipeline_commit, pipeline_dirty=args.pipeline_dirty, started_at=_utc_now(), seed_topics_path=str(args.topics), seed_topics_sha256=hashlib.sha256(args.topics.read_bytes()).hexdigest(), writer_model=WRITER_MODEL, revision_model=REVISION_MODEL, pipeline_gemini_model=GEMINI_MODEL, judge_model=EVAL_JUDGE_MODEL, judge_image_input=True, phase8_settings={"max_editorial_revisions": 1}, python_version=platform.python_version(), locked_package_versions=_locked_versions())
+    manifest = EvaluationManifest(
+        experiment_name=args.experiment_name,
+        purpose=args.purpose,
+        pipeline_commit=args.pipeline_commit,
+        pipeline_dirty=args.pipeline_dirty,
+        started_at=_utc_now(),
+        seed_topics_path=str(args.topics),
+        seed_topics_sha256=hashlib.sha256(args.topics.read_bytes()).hexdigest(),
+        writer_model=WRITER_MODEL,
+        revision_model=REVISION_MODEL,
+        pipeline_gemini_model=GEMINI_MODEL,
+        judge_model=EVAL_JUDGE_MODEL,
+        judge_image_input=True,
+        phase8_settings={"max_editorial_revisions": 1},
+        python_version=platform.python_version(),
+        locked_package_versions=_locked_versions(),
+    )
     _write_manifest(output_dir, manifest)
     runs = run_evaluation(
         topics=topics,
@@ -460,7 +517,9 @@ def main():
         manifest=manifest,
     )
     manifest.finished_at = _utc_now()
-    manifest.success_count = sum(item.status == "success" and item.evaluation is not None for item in runs)
+    manifest.success_count = sum(
+        item.status == "success" and item.evaluation is not None for item in runs
+    )
     manifest.failure_count = len(runs) - manifest.success_count
     _write_manifest(output_dir, manifest)
     write_report(runs=runs, output_dir=output_dir, manifest=manifest)

@@ -30,23 +30,33 @@ class InstrumentedRunnable:
     def __getattr__(self, name):
         return getattr(self._runnable, name)
 
-writer_llm = InstrumentedRunnable(ChatGroq(
-    model=WRITER_MODEL,
-    temperature=0.3,
-    rate_limiter=rate_limiter,
-    max_retries=0,
-), "groq")
+
+writer_llm = InstrumentedRunnable(
+    ChatGroq(
+        model=WRITER_MODEL,
+        temperature=0.3,
+        rate_limiter=rate_limiter,
+        max_retries=0,
+    ),
+    "groq",
+)
 
 
-revision_llm = InstrumentedRunnable(ChatGroq(
-    model=REVISION_MODEL,
-    temperature=0.2,
-    rate_limiter=rate_limiter,
-    max_retries=0,
-), "groq")
+revision_llm = InstrumentedRunnable(
+    ChatGroq(
+        model=REVISION_MODEL,
+        temperature=0.2,
+        rate_limiter=rate_limiter,
+        max_retries=0,
+    ),
+    "groq",
+)
 
 
-gemini_llm = InstrumentedRunnable(ChatGoogleGenerativeAI(
-    model=GEMINI_MODEL,
-    max_retries=0,
-), "gemini")
+gemini_llm = InstrumentedRunnable(
+    ChatGoogleGenerativeAI(
+        model=GEMINI_MODEL,
+        max_retries=0,
+    ),
+    "gemini",
+)

@@ -1,13 +1,15 @@
 """Unit tests for Cloudinary storage service, URL formatting, and signed delivery URL generation."""
+
+from unittest.mock import patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 
 from blog_agent.services.cloudinary_storage import (
-    is_cloudinary_configured,
-    format_cloudinary_public_id,
-    upload_run_image,
-    generate_signed_image_url,
     delete_cloudinary_assets,
+    format_cloudinary_public_id,
+    generate_signed_image_url,
+    is_cloudinary_configured,
+    upload_run_image,
 )
 
 
@@ -38,7 +40,9 @@ def test_upload_run_image_success(mock_upload):
         "bytes": 1024,
     }
 
-    res = upload_run_image(run_id="run-1", filename="test.png", image_bytes=b"fake-png-data")
+    res = upload_run_image(
+        run_id="run-1", filename="test.png", image_bytes=b"fake-png-data"
+    )
     assert res["filename"] == "test.png"
     assert res["public_id"] == "blog-agent/runs/run-1/images/test"
     assert res["asset_id"] == "asset-999"
@@ -49,7 +53,10 @@ def test_upload_run_image_success(mock_upload):
 
 @patch("cloudinary.utils.cloudinary_url")
 def test_generate_signed_image_url(mock_url):
-    mock_url.return_value = ("https://res.cloudinary.com/demo/image/authenticated/s--sig--/v1/test.png", {})
+    mock_url.return_value = (
+        "https://res.cloudinary.com/demo/image/authenticated/s--sig--/v1/test.png",
+        {},
+    )
     url = generate_signed_image_url("blog-agent/runs/run-1/images/test")
     assert "https://res.cloudinary.com" in url
     mock_url.assert_called_once_with(

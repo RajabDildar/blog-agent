@@ -175,7 +175,7 @@ def cloudflare_generate_image_bytes(
 
             return image_bytes
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - Retry classification must inspect any provider error.
             last_error = exc
 
             if attempt >= max_attempts or not _is_transient_cloudflare_error(exc):

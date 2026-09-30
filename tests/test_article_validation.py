@@ -195,7 +195,10 @@ def test_detects_internal_generation_marker():
 
 def test_get_expected_sections_appends_sources_for_research_plan():
     from blog_agent.schemas.models import Plan, Task
-    from blog_agent.services.article_structure import get_expected_sections, plan_requires_sources
+    from blog_agent.services.article_structure import (
+        get_expected_sections,
+        plan_requires_sources,
+    )
 
     plan = Plan(
         blog_title="Test Blog",
@@ -223,7 +226,10 @@ def test_get_expected_sections_appends_sources_for_research_plan():
 
 def test_get_expected_sections_omits_sources_for_closed_book_plan():
     from blog_agent.schemas.models import Plan, Task
-    from blog_agent.services.article_structure import get_expected_sections, plan_requires_sources
+    from blog_agent.services.article_structure import (
+        get_expected_sections,
+        plan_requires_sources,
+    )
 
     plan = Plan(
         blog_title="Test Blog",

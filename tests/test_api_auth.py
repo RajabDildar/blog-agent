@@ -1,29 +1,34 @@
 """Unit tests for authentication, Google token verification, and sessions."""
+
 import uuid
-from datetime import datetime, timezone, timedelta
-from unittest.mock import patch, MagicMock
+from datetime import UTC, datetime, timedelta
+from unittest.mock import patch
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from apps.api.config import get_settings
-from apps.api.db.models import User, Session as DbSession
-from apps.api.auth.google import verify_google_credential, GoogleAuthError
+from apps.api.auth.google import GoogleAuthError, verify_google_credential
 from apps.api.auth.sessions import (
-    hash_token,
-    generate_session_token,
     create_session,
+    generate_session_token,
     get_session_and_user_by_token,
+    hash_token,
     revoke_session,
 )
+from apps.api.config import get_settings
+from apps.api.db.models import Session as DbSession
+from apps.api.db.models import User
 
 settings = get_settings()
+
 
 @pytest.fixture(scope="module")
 def db_engine():
     engine = create_engine(settings.DATABASE_URL)
     yield engine
     engine.dispose()
+
 
 @pytest.fixture
 def db(db_engine):
@@ -34,6 +39,7 @@ def db(db_engine):
     finally:
         session.rollback()
         session.close()
+
 
 def test_google_verify_success():
     client_id = "test-client-id"
@@ -53,6 +59,7 @@ def test_google_verify_success():
         assert payload.display_name == "Test User"
         assert payload.avatar_url == "https://example.com/avatar.jpg"
 
+
 def test_google_verify_invalid_issuer():
     client_id = "test-client-id"
     fake_credential = "fake.jwt.token"
@@ -62,9 +69,12 @@ def test_google_verify_invalid_issuer():
         "email": "bad@example.com",
     }
 
-    with patch("google.oauth2.id_token.verify_oauth2_token", return_value=mock_payload):
-        with pytest.raises(GoogleAuthError, match="Invalid token issuer"):
-            verify_google_credential(fake_credential, client_id=client_id)
+    with (
+        patch("google.oauth2.id_token.verify_oauth2_token", return_value=mock_payload),
+        pytest.raises(GoogleAuthError, match="Invalid token issuer"),
+    ):
+        verify_google_credential(fake_credential, client_id=client_id)
+
 
 def test_google_verify_missing_sub():
     client_id = "test-client-id"
@@ -72,9 +82,12 @@ def test_google_verify_missing_sub():
         "iss": "https://accounts.google.com",
         "email": "missing-sub@example.com",
     }
-    with patch("google.oauth2.id_token.verify_oauth2_token", return_value=mock_payload):
-        with pytest.raises(GoogleAuthError, match="missing 'sub'"):
-            verify_google_credential("token", client_id=client_id)
+    with (
+        patch("google.oauth2.id_token.verify_oauth2_token", return_value=mock_payload),
+        pytest.raises(GoogleAuthError, match="missing 'sub'"),
+    ):
+        verify_google_credential("token", client_id=client_id)
+
 
 def test_session_lifecycle_and_hashing(db):
     user = User(
@@ -107,6 +120,7 @@ def test_session_lifecycle_and_hashing(db):
     assert none_session is None
     assert none_user is None
 
+
 def test_expired_session_handling(db):
     user = User(
         google_sub=f"sub-{uuid.uuid4().hex}",
@@ -118,7 +132,7 @@ def test_expired_session_handling(db):
 
     raw_token = generate_session_token()
     token_h = hash_token(raw_token)
-    expired_time = datetime.now(timezone.utc) - timedelta(hours=1)
+    expired_time = datetime.now(UTC) - timedelta(hours=1)
 
     expired_session = DbSession(
         user_id=user.id,

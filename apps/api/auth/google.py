@@ -1,13 +1,13 @@
 """Google Identity Services ID token verification."""
-from typing import Optional
-from google.oauth2 import id_token
+
 from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token
+
 from apps.api.schemas.auth import GoogleIdPayload
 
 
 class GoogleAuthError(Exception):
     """Raised when Google ID token validation fails."""
-    pass
 
 
 ALLOWED_ISSUERS = {"accounts.google.com", "https://accounts.google.com"}
@@ -16,7 +16,7 @@ ALLOWED_ISSUERS = {"accounts.google.com", "https://accounts.google.com"}
 def verify_google_credential(
     credential: str,
     client_id: str,
-    request_adapter: Optional[google_requests.Request] = None,
+    request_adapter: google_requests.Request | None = None,
 ) -> GoogleIdPayload:
     """
     Verifies a Google ID token JWT using Google's public certs.
@@ -35,7 +35,7 @@ def verify_google_credential(
             audience=client_id,
         )
     except Exception as e:
-        raise GoogleAuthError(f"Invalid Google ID token: {str(e)}") from e
+        raise GoogleAuthError(f"Invalid Google ID token: {e!s}") from e
 
     issuer = id_info.get("iss")
     if issuer not in ALLOWED_ISSUERS:

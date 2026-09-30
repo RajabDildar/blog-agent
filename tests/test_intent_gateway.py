@@ -1,11 +1,11 @@
+from contextlib import suppress
 from unittest.mock import MagicMock, patch
 
-import pytest
 from langgraph.checkpoint.memory import MemorySaver
 
 from blog_agent.graph.main_graph import build_graph
 from blog_agent.nodes.intent_gateway import intent_gateway_node
-from blog_agent.schemas.models import IntentAnalysis, RouterDecision
+from blog_agent.schemas.models import IntentAnalysis
 from blog_agent.schemas.state import State
 from blog_agent.services.run_diagnostics import RunDiagnostics
 
@@ -103,12 +103,15 @@ def test_graph_intent_gateway_routes_to_router_with_finalized_topic():
         router_called_with_topic.append(state["topic"])
         raise StopIteration("router_reached")
 
-    with patch(
-        "blog_agent.nodes.intent_gateway.analyze_intent",
-        return_value=mock_intent,
-    ), patch(
-        "blog_agent.graph.main_graph.router_node",
-        side_effect=mock_router,
+    with (
+        patch(
+            "blog_agent.nodes.intent_gateway.analyze_intent",
+            return_value=mock_intent,
+        ),
+        patch(
+            "blog_agent.graph.main_graph.router_node",
+            side_effect=mock_router,
+        ),
     ):
         app = build_graph(saver)
         initial_state = {
@@ -147,11 +150,8 @@ def test_graph_intent_gateway_routes_to_router_with_finalized_topic():
         }
 
         # We only run until router
-        try:
+        with suppress(Exception):
             app.invoke(initial_state, config, context=context)
-        except Exception:
-            # Downstream may raise because plan.tasks is empty, which is fine
-            pass
 
     assert len(router_called_with_topic) == 1
     # Router must see finalized topic, NOT the raw original_input
@@ -174,12 +174,15 @@ def test_graph_intent_gateway_blocked_never_calls_router():
 
     router_mock = MagicMock()
 
-    with patch(
-        "blog_agent.nodes.intent_gateway.analyze_intent",
-        return_value=mock_blocked,
-    ), patch(
-        "blog_agent.graph.main_graph.router_node",
-        router_mock,
+    with (
+        patch(
+            "blog_agent.nodes.intent_gateway.analyze_intent",
+            return_value=mock_blocked,
+        ),
+        patch(
+            "blog_agent.graph.main_graph.router_node",
+            router_mock,
+        ),
     ):
         app = build_graph(saver)
         initial_state = {

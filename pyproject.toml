@@ -44,3 +44,5 @@ build-backend = "setuptools.build_meta"
 where = ["."]
 include = ["blog_agent*"]
 
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Depends"]

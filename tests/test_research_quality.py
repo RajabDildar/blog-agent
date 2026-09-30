@@ -6,11 +6,10 @@ from datetime import (
 import pytest
 
 from blog_agent.nodes.research import (
-    GroundingDiagnostics,
     _parse_published_at,
-    assign_final_evidence_ids,
     apply_post_extraction_evidence_gate,
     apply_research_quality_gate,
+    assign_final_evidence_ids,
     ground_extracted_evidence,
 )
 from blog_agent.schemas.models import (
@@ -23,7 +22,6 @@ from blog_agent.services.source_quality import (
     compute_source_ratios,
     is_official_primary_source,
 )
-from blog_agent.services.tavily import tavily_search
 
 NOW = datetime(
     2026,
@@ -359,7 +357,9 @@ def test_old_authoritative_standards_remain_allowed_in_time_sensitive_topic() ->
 
     assert len(quality_results) == 1
     assert quality_results[0]["freshness_status"] == "exempt_authoritative_spec"
-    assert "verify separately that any current" in quality_results[0]["freshness_warning"]
+    assert (
+        "verify separately that any current" in quality_results[0]["freshness_warning"]
+    )
 
 
 def test_stale_news_produces_explicit_stale_warning() -> None:
